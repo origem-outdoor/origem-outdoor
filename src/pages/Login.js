@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-const EMAILS_AUTORIZADOS = ['gui.barboosa69@gmail.com']
+const EMAILS_AUTORIZADOS = ['gui.barboosa69@gmail.com', 'laiana_longo@outlook.com']
 
 export default function Login() {
   const [email, setEmail] = useState('')
