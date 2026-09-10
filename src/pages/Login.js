@@ -1,12 +1,14 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
+const EMAILS_AUTORIZADOS = ['gui.barboosa69@gmail.com']
+
 export default function Login() {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
   const [loading, setLoading] = useState(false)
-  const [modo, setModo] = useState('login') // login | cadastro | recuperar
+  const [modo, setModo] = useState('login')
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -19,6 +21,12 @@ export default function Login() {
   const handleCadastro = async (e) => {
     e.preventDefault()
     setLoading(true); setErro('')
+    const emailNorm = email.toLowerCase().trim()
+    if (!EMAILS_AUTORIZADOS.includes(emailNorm)) {
+      setErro('Este email não tem permissão de acesso. Entre em contato com o administrador.')
+      setLoading(false)
+      return
+    }
     const { error } = await supabase.auth.signUp({ email, password: senha })
     if (error) setErro(error.message)
     else setErro('Verifique seu email para confirmar o cadastro.')
@@ -53,18 +61,14 @@ export default function Login() {
         <form onSubmit={modo === 'login' ? handleLogin : modo === 'cadastro' ? handleCadastro : handleRecuperar}>
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 12, fontWeight: 500, color: '#555', display: 'block', marginBottom: 5 }}>Email</label>
-            <input
-              type="email" value={email} onChange={e => setEmail(e.target.value)} required
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
-            />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
           </div>
           {modo !== 'recuperar' && (
             <div style={{ marginBottom: 20 }}>
               <label style={{ fontSize: 12, fontWeight: 500, color: '#555', display: 'block', marginBottom: 5 }}>Senha</label>
-              <input
-                type="password" value={senha} onChange={e => setSenha(e.target.value)} required
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
-              />
+              <input type="password" value={senha} onChange={e => setSenha(e.target.value)} required
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
             </div>
           )}
 

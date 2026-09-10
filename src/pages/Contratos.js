@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { PageHeader, Badge, Btn, Input, Select, Modal, formatBRL, formatDate, diasRestantes, STATUS_CONTRATO, STATUS_PAGAMENTO } from '../components/UI'
 
+const EMAILS_AUTORIZADOS = ['gui.barboosa69@gmail.com', 'laiana@gmail.com']
+
 const FORM_VAZIO = {
-  placa_id: '', face: 'A', cliente_id: '',
+  placa_ids: [], // múltiplas placas
+  cliente_id: '',
   data_inicio: '', data_fim: '', duracao_tipo: '3m',
   modalidade: 'veiculacao',
   valor_veiculacao: 0, valor_arte: 0, valor_impressao: 0,
@@ -48,8 +51,8 @@ export default function Contratos() {
 
   const carregar = async () => {
     const [co, pl, cl] = await Promise.all([
-      supabase.from('contratos').select('*, placas(nome, tipo), clientes(nome)').order('created_at', { ascending: false }),
-      supabase.from('placas').select('id, nome, tipo').eq('status', 'ativa'),
+      supabase.from('contratos').select('*, clientes(nome), contrato_placas(placa_id, face, valor_por_placa, placas(nome))').order('created_at', { ascending: false }),
+      supabase.from('placas').select('id, nome, tipo, aluguel_terreno_mensal').eq('status', 'ativa'),
       supabase.from('clientes').select('id, nome').order('nome'),
     ])
     setContratos(co.data || [])
@@ -67,19 +70,82 @@ export default function Contratos() {
     return novo
   })
 
+  const togglePlaca = (id) => {
+    setForm(f => {
+      const ids = f.placa_ids.includes(id) ? f.placa_ids.filter(i => i !== id) : [...f.placa_ids, id]
+      return { ...f, placa_ids: ids }
+    })
+  }
+
   const abrir = (c = null) => {
-    setForm(c ? { ...c } : FORM_VAZIO)
+    if (c) {
+      const placa_ids = (c.contrato_placas || []).map(cp => cp.placa_id)
+      setForm({ ...FORM_VAZIO, ...c, placa_ids })
+    } else {
+      setForm(FORM_VAZIO)
+    }
     setModal(c ? 'editar' : 'novo')
   }
 
   const salvar = async () => {
+    if (form.placa_ids.length === 0) { alert('Selecione ao menos uma placa.'); return }
     setSalvando(true)
-    const payload = { ...form }
-    delete payload.id; delete payload.created_at; delete payload.updated_at
-    delete payload.placas; delete payload.clientes; delete payload.valor_total
 
-    if (modal === 'novo') await supabase.from('contratos').insert(payload)
-    else await supabase.from('contratos').update(payload).eq('id', form.id)
+    const qtd = form.placa_ids.length
+    const valorTotal = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
+    const valorPorPlaca = qtd > 0 ? valorTotal / qtd : 0
+
+    const payload = {
+      cliente_id: form.cliente_id || null,
+      data_inicio: form.data_inicio,
+      data_fim: form.data_fim,
+      duracao_tipo: form.duracao_tipo,
+      modalidade: form.modalidade,
+      valor_veiculacao: Number(form.valor_veiculacao),
+      valor_arte: Number(form.valor_arte),
+      valor_impressao: Number(form.valor_impressao),
+      custo_colador: Number(form.custo_colador),
+      custo_impressao: Number(form.custo_impressao),
+      custo_terreno_proporcional: Number(form.custo_terreno_proporcional),
+      custo_extra: Number(form.custo_extra),
+      descricao_custo_extra: form.descricao_custo_extra,
+      percentual_imposto: Number(form.percentual_imposto),
+      valor_imposto: Number(form.valor_imposto),
+      emite_nota: form.emite_nota,
+      forma_pagamento: form.forma_pagamento,
+      condicao_pagamento: form.condicao_pagamento,
+      status_pagamento: form.status_pagamento,
+      data_pagamento: form.data_pagamento || null,
+      observacoes_pagamento: form.observacoes_pagamento,
+      historico: form.historico,
+      status: form.status,
+      observacoes: form.observacoes,
+      qtd_placas: qtd,
+      valor_por_placa: valorPorPlaca,
+      // manter placa_id para compatibilidade (primeira placa)
+      placa_id: form.placa_ids[0],
+      face: 'AB',
+    }
+
+    let contrato_id
+    if (modal === 'novo') {
+      const { data } = await supabase.from('contratos').insert(payload).select('id').single()
+      contrato_id = data?.id
+    } else {
+      await supabase.from('contratos').update(payload).eq('id', form.id)
+      contrato_id = form.id
+      await supabase.from('contrato_placas').delete().eq('contrato_id', contrato_id)
+    }
+
+    // Inserir relacionamentos placa x contrato
+    if (contrato_id) {
+      const placasRel = form.placa_ids.map(placa_id => {
+        const placa = placas.find(p => p.id === placa_id)
+        return { contrato_id, placa_id, face: 'AB', valor_por_placa: valorPorPlaca }
+      })
+      await supabase.from('contrato_placas').insert(placasRel)
+    }
+
     setSalvando(false)
     setModal(null)
     carregar()
@@ -92,9 +158,11 @@ export default function Contratos() {
   }
 
   const contFiltrados = filtro === 'todos' ? contratos : contratos.filter(c => c.status === filtro)
-  const valorTotal = form.valor_veiculacao + form.valor_arte + form.valor_impressao
+  const valorTotal = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
   const custoTotal = Number(form.custo_colador) + Number(form.custo_impressao) + Number(form.custo_terreno_proporcional) + Number(form.custo_extra) + Number(form.valor_imposto)
   const lucro = valorTotal - custoTotal
+  const qtdSelecionadas = form.placa_ids.length
+  const valorPorPlaca = qtdSelecionadas > 0 ? valorTotal / qtdSelecionadas : 0
 
   if (loading) return <div style={{ color: '#888' }}>Carregando...</div>
 
@@ -106,7 +174,6 @@ export default function Contratos() {
         action={<Btn onClick={() => abrir()}>+ Novo contrato</Btn>}
       />
 
-      {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {[['todos', 'Todos'], ['ativo', 'Ativos'], ['encerrado', 'Encerrados'], ['renovado', 'Renovados']].map(([v, l]) => (
           <button key={v} onClick={() => setFiltro(v)} style={{
@@ -119,11 +186,11 @@ export default function Contratos() {
         ))}
       </div>
 
-      {/* Lista */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {contFiltrados.map(c => {
           const dias = diasRestantes(c.data_fim)
           const urgente = c.status === 'ativo' && dias !== null && dias >= 0 && dias <= 15
+          const placasNomes = (c.contrato_placas || []).map(cp => cp.placas?.nome).filter(Boolean)
           return (
             <div key={c.id} style={{
               background: '#fff', borderRadius: 12,
@@ -138,10 +205,12 @@ export default function Contratos() {
                     {c.historico && <span style={{ fontSize: 10, background: '#EEEDFE', color: '#3C3489', borderRadius: 10, padding: '2px 7px', marginLeft: 8, fontWeight: 600 }}>HISTÓRICO</span>}
                   </div>
                   <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
-                    {c.placas?.nome} {c.face !== 'AB' ? `· Face ${c.face}` : '· Face dupla'}
+                    {placasNomes.length > 0 ? placasNomes.join(', ') : 'Sem placas'}
+                    {c.qtd_placas > 1 && <span style={{ marginLeft: 6, background: '#EEEDFE', color: '#3C3489', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 600 }}>{c.qtd_placas} placas</span>}
                     &nbsp;·&nbsp;{formatDate(c.data_inicio)} → {formatDate(c.data_fim)}
                     {dias !== null && c.status === 'ativo' && <span style={{ marginLeft: 6, color: urgente ? '#B45309' : '#888' }}>({dias < 0 ? 'vencido' : `${dias}d restantes`})</span>}
                   </div>
+                  {c.qtd_placas > 1 && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{formatBRL(c.valor_por_placa)} por placa</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Badge texto={STATUS_PAGAMENTO[c.status_pagamento]?.label} cor={STATUS_PAGAMENTO[c.status_pagamento]?.cor} />
@@ -160,13 +229,34 @@ export default function Contratos() {
       </div>
 
       {modal && (
-        <Modal title={modal === 'novo' ? 'Novo Contrato' : 'Editar Contrato'} onClose={() => setModal(null)} width={600}>
+        <Modal title={modal === 'novo' ? 'Novo Contrato' : 'Editar Contrato'} onClose={() => setModal(null)} width={620}>
+          
+          {/* Seleção de placas */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 8 }}>
+              PLACAS DO CONTRATO * <span style={{ color: '#888', fontWeight: 400 }}>({qtdSelecionadas} selecionada{qtdSelecionadas !== 1 ? 's' : ''})</span>
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+              {placas.map(p => (
+                <label key={p.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
+                  border: `1.5px solid ${form.placa_ids.includes(p.id) ? '#1a1a18' : '#ddd'}`,
+                  background: form.placa_ids.includes(p.id) ? '#F0F0EE' : '#fff',
+                  fontSize: 13, fontWeight: form.placa_ids.includes(p.id) ? 600 : 400
+                }}>
+                  <input type="checkbox" checked={form.placa_ids.includes(p.id)} onChange={() => togglePlaca(p.id)} />
+                  <div>
+                    <div>{p.nome}</div>
+                    <div style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>{p.tipo === 'dupla' ? '18x3m' : '9x3m'}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <Select label="Placa" value={form.placa_id} onChange={v => set('placa_id', v)} required
-              options={placas.map(p => ({ value: p.id, label: `${p.nome} (${p.tipo})` }))} />
-            <Select label="Face" value={form.face} onChange={v => set('face', v)}
-              options={[{ value: 'A', label: 'Face A' }, { value: 'B', label: 'Face B' }, { value: 'AB', label: 'Dupla completa (AB)' }]} />
-            <Select label="Cliente" value={form.cliente_id} onChange={v => set('cliente_id', v)}
+            <Select label="Cliente" value={form.cliente_id || ''} onChange={v => set('cliente_id', v)}
               options={clientes.map(c => ({ value: c.id, label: c.nome }))} style={{ gridColumn: '1/-1' }} />
             <Select label="Duração" value={form.duracao_tipo} onChange={v => set('duracao_tipo', v)} options={DURACOES} />
             <Input label="Data início" value={form.data_inicio} onChange={v => set('data_inicio', v)} type="date" required />
@@ -180,13 +270,18 @@ export default function Contratos() {
           <div style={{ background: '#F7F6F2', borderRadius: 10, padding: 14, marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>RECEITAS</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px' }}>
-              <Input label="Veiculação (R$)" value={form.valor_veiculacao} onChange={v => set('valor_veiculacao', Number(v))} type="number" />
+              <Input label="Veiculação total (R$)" value={form.valor_veiculacao} onChange={v => set('valor_veiculacao', Number(v))} type="number" />
               {form.modalidade === 'completo' && <>
                 <Input label="Arte (R$)" value={form.valor_arte} onChange={v => set('valor_arte', Number(v))} type="number" />
                 <Input label="Impressão recebida (R$)" value={form.valor_impressao} onChange={v => set('valor_impressao', Number(v))} type="number" />
               </>}
             </div>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#0A5C42' }}>Total: {formatBRL(valorTotal)}</div>
+            {qtdSelecionadas > 1 && (
+              <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                {formatBRL(valorPorPlaca)} por placa ({qtdSelecionadas} placas)
+              </div>
+            )}
           </div>
 
           <div style={{ background: '#FFF5F5', borderRadius: 10, padding: 14, marginBottom: 14 }}>
@@ -233,14 +328,9 @@ export default function Contratos() {
                 Emite nota fiscal
               </label>
             </div>
-            <div style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: '#555', display: 'block', marginBottom: 4 }}>Obs. pagamento</label>
-              <input value={form.observacoes_pagamento || ''} onChange={e => set('observacoes_pagamento', e.target.value)}
-                style={{ width: '100%', padding: '9px 11px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }} />
-            </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
             <label style={{ fontSize: 12, fontWeight: 500, color: '#555', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <input type="checkbox" checked={form.historico} onChange={e => set('historico', e.target.checked)} />
               Contrato histórico (lançamento retroativo)
