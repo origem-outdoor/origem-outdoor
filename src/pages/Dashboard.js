@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatBRL, formatDate, diasRestantes } from '../components/UI'
 
@@ -232,8 +231,8 @@ function DonutChart({ ativas, disponiveis, manutencao }) {
   )
 }
 
-export default function Dashboard() {
-  const navigate = useNavigate()
+export default function Dashboard({ setPage = () => {} }) {
+  const navigate = (page) => setPage(page)
   const [dados, setDados] = useState({ placas: [], contratos: [], clientes: [] })
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState(6)
@@ -308,7 +307,7 @@ export default function Dashboard() {
         <div style={{ display: 'flex', gap: 10 }}>
           <PeriodoPicker valor={periodo} onChange={setPeriodo} />
           <button
-            onClick={() => navigate('/contratos', { state: { novo: true } })}
+            onClick={() => navigate('contratos')}
             style={{
               height: 44, padding: '0 18px', borderRadius: 10, border: 'none',
               background: C.primary, color: '#fff', fontFamily: 'inherit',
@@ -344,7 +343,7 @@ export default function Dashboard() {
         <section style={{ background: C.surface, borderRadius: 14, padding: '22px 24px 12px', boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)', display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>Contratos recentes</h2>
-            <button onClick={() => navigate('/contratos')} style={{ fontSize: 13, fontWeight: 700, color: C.primary, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Ver todos</button>
+            <button onClick={() => navigate('contratos')} style={{ fontSize: 13, fontWeight: 700, color: C.primary, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Ver todos</button>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, minWidth: 520 }}>
@@ -399,13 +398,13 @@ export default function Dashboard() {
                     <span style={{ fontSize: 14, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.clientes?.nome || '-'}</span>
                     <span style={{ fontSize: 12, color: C.textLight }}>{c.placas?.nome} - vence {formatDate(c.data_fim)} - {formatBRL(c.valor_total)}</span>
                   </div>
-                  <button onClick={() => navigate('/contratos', { state: { renovar: c.id } })} style={{ fontSize: 13, fontWeight: 700, color: C.primary, background: 'none', border: 'none', cursor: 'pointer', padding: '8px 4px', flexShrink: 0 }}>Renovar</button>
+                  <button onClick={() => navigate('contratos')} style={{ fontSize: 13, fontWeight: 700, color: C.primary, background: 'none', border: 'none', cursor: 'pointer', padding: '8px 4px', flexShrink: 0 }}>Renovar</button>
                 </div>
               )
             })}
           </div>
           {vencendo30.length > 0 && (
-            <button onClick={() => navigate('/contratos')} style={{ marginTop: 'auto', height: 44, borderRadius: 10, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 700, background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Ver todos os vencimentos</button>
+            <button onClick={() => navigate('contratos')} style={{ marginTop: 'auto', height: 44, borderRadius: 10, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 700, background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Ver todos os vencimentos</button>
           )}
         </section>
       </div>

@@ -241,7 +241,7 @@ export default function App() {
           maxWidth: 'calc(100vw - 230px)',
           boxSizing: 'border-box',
         }}>
-          <PageComponent />
+          <PageComponent setPage={setPage} />
         </main>
       </div>
     </AuthContext.Provider>
