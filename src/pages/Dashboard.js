@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatBRL, formatDate, diasRestantes } from '../components/UI'
 
@@ -30,6 +31,66 @@ const IcoUsers     = () => <svg width={18} height={18} viewBox="0 0 24 24" fill=
 const IcoAlert     = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
 const IcoBars      = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
 const IcoPlus      = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+const IcoChevron   = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+
+function PeriodoPicker({ valor, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const opcoes = [
+    { label: 'Últimos 3 meses',  value: 3  },
+    { label: 'Últimos 6 meses',  value: 6  },
+    { label: 'Últimos 12 meses', value: 12 },
+  ]
+  const labelAtual = opcoes.find(o => o.value === valor)?.label || 'Últimos 6 meses'
+
+  useEffect(() => {
+    const handle = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          height: 44, padding: '0 16px', borderRadius: 10,
+          border: `1px solid ${open ? C.primary : C.border}`,
+          background: open ? C.primarySoft : C.surface,
+          color: open ? C.primary : C.text,
+          fontFamily: 'inherit', fontWeight: 600, fontSize: 14,
+          display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+          transition: 'all 0.15s',
+        }}
+      >
+        <IcoBars /> {labelAtual} <IcoChevron />
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 100,
+          background: C.surface, borderRadius: 10, border: `1px solid ${C.border}`,
+          boxShadow: '0 8px 24px rgba(16,24,40,0.12)', minWidth: 180, overflow: 'hidden',
+        }}>
+          {opcoes.map(op => (
+            <button
+              key={op.value}
+              onClick={() => { onChange(op.value); setOpen(false) }}
+              style={{
+                display: 'block', width: '100%', padding: '11px 16px',
+                textAlign: 'left', border: 'none', cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: 14, fontWeight: op.value === valor ? 700 : 500,
+                background: op.value === valor ? C.primarySoft : 'transparent',
+                color: op.value === valor ? C.primary : C.text,
+              }}
+            >
+              {op.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function KpiCard({ icon, label, value, sub, blue = false, bar = null }) {
   return (
@@ -91,7 +152,7 @@ function BarChart({ meses }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>Faturamento mensal</h2>
-          <span style={{ fontSize: 13, color: C.textLight }}>{nomes[meses[0].mes - 1]} a {nomes[meses[meses.length-1].mes - 1]} de {meses[0].ano}</span>
+          <span style={{ fontSize: 13, color: C.textLight }}>{nomes[meses[0].mes - 1]} a {nomes[meses[meses.length-1].mes - 1]} de {meses[meses.length-1].ano}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
           <span style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{formatBRL(total)}</span>
@@ -99,7 +160,7 @@ function BarChart({ meses }) {
         </div>
       </div>
       <div style={{
-        display: 'flex', alignItems: 'flex-end', gap: 14, height: 200, padding: '0 4px',
+        display: 'flex', alignItems: 'flex-end', gap: meses.length > 6 ? 8 : 14, height: 200, padding: '0 4px',
         borderBottom: `1px solid ${C.borderLight}`,
         backgroundImage: `linear-gradient(${C.borderLight} 1px, transparent 1px)`,
         backgroundSize: '100% 50px', backgroundPosition: '0 0',
@@ -107,7 +168,7 @@ function BarChart({ meses }) {
         {meses.map((m, i) => {
           const isLast = i === meses.length - 1
           const h = Math.max(Math.round((m.valor / max) * 180), m.valor > 0 ? 8 : 0)
-          const label = formatBRL(m.valor).replace('R$ ','').replace('R$ ','')
+          const label = formatBRL(m.valor).replace('R$ ','')
           return (
             <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
               {isLast
@@ -119,10 +180,10 @@ function BarChart({ meses }) {
           )
         })}
       </div>
-      <div style={{ display: 'flex', gap: 14, padding: '0 4px', marginTop: -8 }}>
+      <div style={{ display: 'flex', gap: meses.length > 6 ? 8 : 14, padding: '0 4px', marginTop: -8 }}>
         {meses.map((m, i) => {
           const isLast = i === meses.length - 1
-          return <span key={i} style={{ flex: 1, textAlign: 'center', fontSize: 12, fontWeight: isLast ? 800 : 600, color: isLast ? C.primary : C.textLight }}>{nomes[m.mes-1]}</span>
+          return <span key={i} style={{ flex: 1, textAlign: 'center', fontSize: meses.length > 6 ? 10 : 12, fontWeight: isLast ? 800 : 600, color: isLast ? C.primary : C.textLight }}>{nomes[m.mes-1]}</span>
         })}
       </div>
     </div>
@@ -172,8 +233,10 @@ function DonutChart({ ativas, disponiveis, manutencao }) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [dados, setDados] = useState({ placas: [], contratos: [], clientes: [] })
   const [loading, setLoading] = useState(true)
+  const [periodo, setPeriodo] = useState(6)
   const hoje = new Date()
 
   useEffect(() => {
@@ -197,9 +260,9 @@ export default function Dashboard() {
   const placasManut      = dados.placas.filter(p => p.status === 'manutencao').length
   const pctDisp          = totalPlacas ? Math.round((placasDisp / totalPlacas) * 100) : 0
 
-  const meses6m = (() => {
+  const mesesPeriodo = (() => {
     const mapa = {}
-    for (let i = 5; i >= 0; i--) {
+    for (let i = periodo - 1; i >= 0; i--) {
       const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1)
       const k = `${d.getFullYear()}-${d.getMonth()+1}`
       mapa[k] = { mes: d.getMonth()+1, ano: d.getFullYear(), valor: 0 }
@@ -212,7 +275,7 @@ export default function Dashboard() {
     })
     return Object.values(mapa)
   })()
-  const fat6m = meses6m.reduce((s, m) => s + m.valor, 0)
+  const fatPeriodo = mesesPeriodo.reduce((s, m) => s + m.valor, 0)
 
   const vencendo30 = contratosAtivos
     .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 30 })
@@ -243,10 +306,18 @@ export default function Dashboard() {
           <p style={{ margin: 0, fontSize: 14, color: C.textLight }}>Visao geral da operacao · atualizado em {hoje.toLocaleDateString('pt-BR')}</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button style={{ height: 44, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: 'inherit', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <IcoBars /> Ultimos 6 meses
-          </button>
-          <button style={{ height: 44, padding: '0 18px', borderRadius: 10, border: 'none', background: C.primary, color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <PeriodoPicker valor={periodo} onChange={setPeriodo} />
+          <button
+            onClick={() => navigate('/contratos', { state: { novo: true } })}
+            style={{
+              height: 44, padding: '0 18px', borderRadius: 10, border: 'none',
+              background: C.primary, color: '#fff', fontFamily: 'inherit',
+              fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center',
+              gap: 8, cursor: 'pointer',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = C.primaryDark}
+            onMouseLeave={e => e.currentTarget.style.background = C.primary}
+          >
             <IcoPlus /> Novo contrato
           </button>
         </div>
@@ -255,14 +326,14 @@ export default function Dashboard() {
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
         <KpiCard icon={<IcoContract />} label="Contratos Ativos" value={contratosAtivos.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> em relacao ao mes passado</>} />
         <KpiCard icon={<IcoDollar />}   label="Faturamento Ativo" value={formatBRL(faturamentoAtivo)} sub="receita mensal recorrente" />
-        <KpiCard icon={<IcoTrend />}    label="Faturamento 6 meses" value={formatBRL(fat6m)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos 6 meses</>} blue />
+        <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue />
         <KpiCard icon={<IcoBoard />}    label="Placas Disponiveis" value={<>{placasDisp} <span style={{ fontSize: 15, fontWeight: 600, color: C.textLight }}>de {totalPlacas}</span></>} bar={pctDisp} />
         <KpiCard icon={<IcoUsers />}    label="Clientes Cadastrados" value={dados.clientes.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> novos este mes</>} />
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20 }}>
         <section style={{ background: C.surface, borderRadius: 14, padding: '22px 24px', boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)' }}>
-          <BarChart meses={meses6m} />
+          <BarChart meses={mesesPeriodo} />
         </section>
         <section style={{ background: C.surface, borderRadius: 14, padding: '22px 24px', boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)' }}>
           <DonutChart ativas={placasAtivas} disponiveis={placasDisp} manutencao={placasManut} />
@@ -273,7 +344,7 @@ export default function Dashboard() {
         <section style={{ background: C.surface, borderRadius: 14, padding: '22px 24px 12px', boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)', display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>Contratos recentes</h2>
-            <a href="#" style={{ fontSize: 13, fontWeight: 700, color: C.primary, textDecoration: 'none' }}>Ver todos</a>
+            <button onClick={() => navigate('/contratos')} style={{ fontSize: 13, fontWeight: 700, color: C.primary, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Ver todos</button>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, minWidth: 520 }}>
@@ -328,13 +399,13 @@ export default function Dashboard() {
                     <span style={{ fontSize: 14, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.clientes?.nome || '-'}</span>
                     <span style={{ fontSize: 12, color: C.textLight }}>{c.placas?.nome} - vence {formatDate(c.data_fim)} - {formatBRL(c.valor_total)}</span>
                   </div>
-                  <a href="#" style={{ fontSize: 13, fontWeight: 700, color: C.primary, textDecoration: 'none', padding: '8px 4px', flexShrink: 0 }}>Renovar</a>
+                  <button onClick={() => navigate('/contratos', { state: { renovar: c.id } })} style={{ fontSize: 13, fontWeight: 700, color: C.primary, background: 'none', border: 'none', cursor: 'pointer', padding: '8px 4px', flexShrink: 0 }}>Renovar</button>
                 </div>
               )
             })}
           </div>
           {vencendo30.length > 0 && (
-            <a href="#" style={{ marginTop: 'auto', height: 44, borderRadius: 10, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Ver todos os vencimentos</a>
+            <button onClick={() => navigate('/contratos')} style={{ marginTop: 'auto', height: 44, borderRadius: 10, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 700, background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Ver todos os vencimentos</button>
           )}
         </section>
       </div>
