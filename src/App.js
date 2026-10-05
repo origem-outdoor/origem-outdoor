@@ -8,44 +8,52 @@ import Contratos from './pages/Contratos'
 import Clientes from './pages/Clientes'
 import Comissoes from './pages/Comissoes'
 import Relatorios from './pages/Relatorios'
+import ContasPagar from './pages/ContasPagar'
 
 export const AuthContext = createContext(null)
 export const useAuth = () => useContext(AuthContext)
 
 const PAGES = {
-  dashboard: Dashboard,
-  placas: Placas,
-  contratos: Contratos,
-  clientes: Clientes,
-  comissoes: Comissoes,
-  relatorios: Relatorios,
+  dashboard:    Dashboard,
+  placas:       Placas,
+  contratos:    Contratos,
+  clientes:     Clientes,
+  comissoes:    Comissoes,
+  relatorios:   Relatorios,
+  contaspagar:  ContasPagar,
 }
 
 const NAV = [
-  { id: 'dashboard', label: 'Painel',     icon: '⊞', emoji: true },
-  { id: 'placas',    label: 'Placas',     icon: '🪧', emoji: true },
-  { id: 'contratos', label: 'Contratos',  icon: '📄', emoji: true },
-  { id: 'clientes',  label: 'Clientes',   icon: '👤', emoji: true },
-  { id: 'comissoes', label: 'Comissões',  icon: '🤝', emoji: true },
-  { id: 'relatorios',label: 'Relatórios', icon: '📊', emoji: true },
+  { id: 'dashboard',   label: 'Painel',         icon: '⊞', emoji: true },
+  { id: 'placas',      label: 'Placas',          icon: '🪧', emoji: true },
+  { id: 'contratos',   label: 'Contratos',       icon: '📄', emoji: true },
+  { id: 'clientes',    label: 'Clientes',        icon: '👤', emoji: true },
+  { id: 'comissoes',   label: 'Comissões',       icon: '🤝', emoji: true },
+  { id: 'contaspagar', label: 'Contas a Pagar',  icon: '💸', emoji: true },
+  { id: 'relatorios',  label: 'Relatórios',      icon: '📊', emoji: true },
 ]
 
-function NavItem({ n, active, onClick }) {
+function diasParaVencer(dataVenc) {
+  if (!dataVenc) return null
+  const hoje = new Date(); hoje.setHours(0,0,0,0)
+  const venc = new Date(dataVenc + 'T00:00:00')
+  return Math.round((venc - hoje) / 86400000)
+}
+
+function NavItem({ n, active, onClick, badge }) {
   const [hovered, setHovered] = useState(false)
   return (
     <button
-      key={n.id}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        width: '100%',
+        width: 'calc(100% - 16px)',
         display: 'flex',
         alignItems: 'center',
         gap: 10,
         padding: '11px 16px',
         margin: '1px 8px',
-        width: 'calc(100% - 16px)',
         background: active
           ? COLORS.primarySoft
           : hovered ? '#EEF1F7' : 'transparent',
@@ -61,8 +69,16 @@ function NavItem({ n, active, onClick }) {
       }}
     >
       <span style={{ fontSize: 16, width: 22, textAlign: 'center', flexShrink: 0 }}>{n.icon}</span>
-      <span>{n.label}</span>
-      {active && (
+      <span style={{ flexGrow: 1 }}>{n.label}</span>
+      {badge > 0 && (
+        <span style={{
+          minWidth: 20, height: 20, padding: '0 6px', borderRadius: 999, boxSizing: 'border-box',
+          background: badge > 0 ? '#DC2626' : '#F59E0B',
+          color: '#fff', fontSize: 11, fontWeight: 800,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>{badge}</span>
+      )}
+      {active && !badge && (
         <span style={{
           marginLeft: 'auto',
           width: 6, height: 6, borderRadius: '50%',
@@ -73,7 +89,7 @@ function NavItem({ n, active, onClick }) {
   )
 }
 
-function Sidebar({ page, setPage, user, onLogout }) {
+function Sidebar({ page, setPage, user, onLogout, alertasContas }) {
   return (
     <div style={{
       width: 230,
@@ -88,27 +104,17 @@ function Sidebar({ page, setPage, user, onLogout }) {
       boxShadow: '2px 0 12px rgba(0,0,0,0.04)',
     }}>
       {/* Logo */}
-      <div style={{
-        padding: '22px 20px 18px',
-        borderBottom: `1px solid ${COLORS.border}`,
-      }}>
+      <div style={{ padding: '22px 20px 18px', borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: COLORS.primary,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
+            width: 36, height: 36, borderRadius: 10, background: COLORS.primary,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }}>
             <span style={{ fontSize: 16 }}>🪧</span>
           </div>
           <div>
-            <div style={{
-              fontSize: 15, fontWeight: 800, color: COLORS.text,
-              letterSpacing: '-0.3px', lineHeight: 1.1
-            }}>ORIGEM</div>
-            <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, letterSpacing: '0.5px' }}>
-              OUTDOOR
-            </div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.text, letterSpacing: '-0.3px', lineHeight: 1.1 }}>ORIGEM</div>
+            <div style={{ fontSize: 10, color: COLORS.textLight, fontWeight: 500, letterSpacing: '0.5px' }}>OUTDOOR</div>
           </div>
         </div>
       </div>
@@ -121,32 +127,23 @@ function Sidebar({ page, setPage, user, onLogout }) {
             n={n}
             active={page === n.id}
             onClick={() => setPage(n.id)}
+            badge={n.id === 'contaspagar' ? alertasContas : 0}
           />
         ))}
       </nav>
 
       {/* Footer */}
-      <div style={{
-        padding: '14px 20px',
-        borderTop: `1px solid ${COLORS.border}`,
-        background: '#FAFBFD',
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10
-        }}>
+      <div style={{ padding: '14px 20px', borderTop: `1px solid ${COLORS.border}`, background: '#FAFBFD' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div style={{
-            width: 32, height: 32, borderRadius: '50%',
-            background: COLORS.primarySoft,
+            width: 32, height: 32, borderRadius: '50%', background: COLORS.primarySoft,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 13, fontWeight: 700, color: COLORS.primary, flexShrink: 0
           }}>
             {user?.email?.[0]?.toUpperCase() || '?'}
           </div>
           <div style={{ overflow: 'hidden' }}>
-            <div style={{
-              fontSize: 11, fontWeight: 600, color: COLORS.textMedium,
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-            }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMedium, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {user?.email?.split('@')[0] || 'Usuário'}
             </div>
             <div style={{ fontSize: 10, color: COLORS.textLight }}>Administrador</div>
@@ -155,16 +152,10 @@ function Sidebar({ page, setPage, user, onLogout }) {
         <button
           onClick={onLogout}
           style={{
-            width: '100%',
-            padding: '7px 0',
-            background: 'transparent',
-            border: `1px solid ${COLORS.border}`,
-            borderRadius: 8,
-            fontSize: 12, fontWeight: 500,
-            color: COLORS.textLight,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            transition: 'all 0.15s ease',
+            width: '100%', padding: '7px 0', background: 'transparent',
+            border: `1px solid ${COLORS.border}`, borderRadius: 8,
+            fontSize: 12, fontWeight: 500, color: COLORS.textLight,
+            cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s ease',
           }}
           onMouseEnter={e => {
             e.target.style.color = COLORS.danger
@@ -188,6 +179,7 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState('dashboard')
+  const [alertasContas, setAlertasContas] = useState(0)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -199,6 +191,27 @@ export default function App() {
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  // Busca alertas de contas a vencer (≤1 dia) a cada 5 minutos
+  useEffect(() => {
+    async function checarAlertas() {
+      const { data } = await supabase
+        .from('contas_pagar')
+        .select('data_vencimento, status')
+        .neq('status', 'pago')
+      if (!data) return
+      const count = data.filter(c => {
+        const d = diasParaVencer(c.data_vencimento)
+        return d !== null && d <= 1
+      }).length
+      setAlertasContas(count)
+    }
+    if (session) {
+      checarAlertas()
+      const interval = setInterval(checarAlertas, 5 * 60 * 1000)
+      return () => clearInterval(interval)
+    }
+  }, [session])
 
   if (loading) return (
     <div style={{
@@ -231,15 +244,12 @@ export default function App() {
           setPage={setPage}
           user={session.user}
           onLogout={() => supabase.auth.signOut()}
+          alertasContas={alertasContas}
         />
         <main style={{
-          marginLeft: 230,
-          flex: 1,
-          minHeight: '100vh',
-          padding: '28px 32px',
-          background: COLORS.bg,
-          maxWidth: 'calc(100vw - 230px)',
-          boxSizing: 'border-box',
+          marginLeft: 230, flex: 1, minHeight: '100vh',
+          padding: '28px 32px', background: COLORS.bg,
+          maxWidth: 'calc(100vw - 230px)', boxSizing: 'border-box',
         }}>
           <PageComponent setPage={setPage} />
         </main>
