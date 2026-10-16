@@ -340,6 +340,7 @@ export default function Contratos() {
             <Input label="Data fim" value={form.data_fim} onChange={v => set('data_fim', v)} type="date" required />
             <Select label="Modalidade" value={form.modalidade} onChange={v => set('modalidade', v)} options={[
               { value: 'veiculacao', label: 'Só veiculação' },
+              { value: 'veiculacao_impressao', label: 'Veiculação + Impressão' },
               { value: 'completo', label: 'Atendimento completo (arte + impressão)' },
             ]} style={{ gridColumn: '1/-1' }} />
           </div>
@@ -348,7 +349,7 @@ export default function Contratos() {
             <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>RECEITAS</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px' }}>
               <Input label="Veiculação total (R$)" value={form.valor_veiculacao} onChange={v => set('valor_veiculacao', Number(v))} type="number" />
-              {form.modalidade === 'completo' && <>
+              {(form.modalidade === 'completo' || form.modalidade === 'veiculacao_impressao') && <>
                 <Input label="Arte (R$)" value={form.valor_arte} onChange={v => set('valor_arte', Number(v))} type="number" />
                 <Input label="Impressão recebida (R$)" value={form.valor_impressao} onChange={v => set('valor_impressao', Number(v))} type="number" />
               </>}
