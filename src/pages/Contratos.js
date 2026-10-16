@@ -48,6 +48,9 @@ export default function Contratos() {
   const [form, setForm] = useState(FORM_VAZIO)
   const [salvando, setSalvando] = useState(false)
   const [filtro, setFiltro] = useState('ativo')
+  const [novoCliente, setNovoCliente] = useState({ nome: '', telefone: '' })
+  const [criandoCliente, setCriandoCliente] = useState(false)
+  const [salvandoCliente, setSalvandoCliente] = useState(false)
 
   const carregar = async () => {
     const [co, pl, cl] = await Promise.all([
@@ -84,7 +87,28 @@ export default function Contratos() {
     } else {
       setForm(FORM_VAZIO)
     }
+    setNovoCliente({ nome: '', telefone: '' })
+    setCriandoCliente(false)
     setModal(c ? 'editar' : 'novo')
+  }
+
+  const salvarClienteRapido = async () => {
+    if (!novoCliente.nome.trim()) { alert('Informe o nome do cliente.'); return }
+    setSalvandoCliente(true)
+    const { data, error } = await supabase.from('clientes').insert({
+      nome: novoCliente.nome.trim(),
+      telefone: novoCliente.telefone.trim() || null,
+    }).select('id, nome').single()
+    if (error || !data) {
+      alert('Erro ao cadastrar cliente.')
+      setSalvandoCliente(false)
+      return
+    }
+    setClientes(prev => [...prev, data].sort((a, b) => a.nome.localeCompare(b.nome)))
+    set('cliente_id', data.id)
+    setNovoCliente({ nome: '', telefone: '' })
+    setCriandoCliente(false)
+    setSalvandoCliente(false)
   }
 
   const salvar = async () => {
@@ -256,8 +280,61 @@ export default function Contratos() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <Select label="Cliente" value={form.cliente_id || ''} onChange={v => set('cliente_id', v)}
-              options={clientes.map(c => ({ value: c.id, label: c.nome }))} style={{ gridColumn: '1/-1' }} />
+            {/* Campo cliente com opção de criar novo */}
+            <div style={{ gridColumn: '1/-1', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>CLIENTE</label>
+                {!criandoCliente && (
+                  <button
+                    type="button"
+                    onClick={() => setCriandoCliente(true)}
+                    style={{
+                      fontSize: 11, color: '#1a1a18', background: 'none', border: 'none',
+                      cursor: 'pointer', fontWeight: 600, textDecoration: 'underline', padding: 0
+                    }}
+                  >
+                    + Cadastrar novo
+                  </button>
+                )}
+              </div>
+
+              {criandoCliente ? (
+                <div style={{ background: '#F7F6F2', borderRadius: 10, padding: 12, border: '1.5px solid #ddd' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>NOVO CLIENTE RÁPIDO</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+                    <Input
+                      label="Nome *"
+                      value={novoCliente.nome}
+                      onChange={v => setNovoCliente(prev => ({ ...prev, nome: v }))}
+                    />
+                    <Input
+                      label="Telefone"
+                      value={novoCliente.telefone}
+                      onChange={v => setNovoCliente(prev => ({ ...prev, telefone: v }))}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <Btn onClick={salvarClienteRapido} disabled={salvandoCliente} size="sm">
+                      {salvandoCliente ? 'Salvando...' : 'Salvar cliente'}
+                    </Btn>
+                    <Btn onClick={() => { setCriandoCliente(false); setNovoCliente({ nome: '', telefone: '' }) }} variant="secondary" size="sm">
+                      Cancelar
+                    </Btn>
+                  </div>
+                </div>
+              ) : (
+                <Select
+                  label=""
+                  value={form.cliente_id || ''}
+                  onChange={v => set('cliente_id', v)}
+                  options={[
+                    { value: '', label: 'Sem cliente (preencher depois)' },
+                    ...clientes.map(c => ({ value: c.id, label: c.nome }))
+                  ]}
+                />
+              )}
+            </div>
+
             <Select label="Duração" value={form.duracao_tipo} onChange={v => set('duracao_tipo', v)} options={DURACOES} />
             <Input label="Data início" value={form.data_inicio} onChange={v => set('data_inicio', v)} type="date" required />
             <Input label="Data fim" value={form.data_fim} onChange={v => set('data_fim', v)} type="date" required />
