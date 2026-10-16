@@ -254,10 +254,20 @@ export default function Dashboard({ setPage = () => {} }) {
   const contratosAtivos  = dados.contratos.filter(c => c.status === 'ativo')
   const faturamentoAtivo = contratosAtivos.reduce((s, c) => s + (c.valor_total || 0), 0)
   const totalPlacas      = dados.placas.length
-  const placasAtivas     = dados.placas.filter(p => p.status === 'ativo').length
-  const placasDisp       = dados.placas.filter(p => p.status === 'disponivel' || p.status === 'livre').length
-  const placasManut      = dados.placas.filter(p => p.status === 'manutencao').length
-  const pctDisp          = totalPlacas ? Math.round((placasDisp / totalPlacas) * 100) : 0
+  // Ocupacao calculada pelos contratos ativos de hoje (nao depende do status da placa)
+  const placasComContratoAtivo = new Set(
+    contratosAtivos
+      .filter(c => {
+        const inicio = c.data_inicio ? new Date(c.data_inicio + 'T00:00:00') : null
+        const fim    = c.data_fim    ? new Date(c.data_fim    + 'T23:59:59') : null
+        return inicio && fim && inicio <= hoje && fim >= hoje
+      })
+      .map(c => c.placa_id)
+  )
+  const placasAtivas   = placasComContratoAtivo.size
+  const placasManut    = dados.placas.filter(p => p.status === 'manutencao').length
+  const placasDisp     = Math.max(totalPlacas - placasAtivas - placasManut, 0)
+  const pctDisp        = totalPlacas ? Math.round((placasDisp / totalPlacas) * 100) : 0
 
   const mesesPeriodo = (() => {
     const mapa = {}
