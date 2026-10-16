@@ -153,7 +153,8 @@ export default function Contratos() {
 
     let contrato_id
     if (modal === 'novo') {
-      const { data } = await supabase.from('contratos').insert(payload).select('id').single()
+      const { data, error: insertError } = await supabase.from('contratos').insert(payload).select('id').single()
+      if (insertError) { alert('Erro ao salvar: ' + insertError.message); setSalvando(false); return }
       contrato_id = data?.id
     } else {
       await supabase.from('contratos').update(payload).eq('id', form.id)
