@@ -291,8 +291,12 @@ export default function Contratos() {
       })
       await supabase.from('contrato_placas').insert(placasRel)
 
-      // Parcelas — só salva quando parcelado
-      const parcelasValidas = form.forma_parcelamento === 'parcelado' ? parcelas.filter(p => p.data_vencimento) : []
+      // Parcelas — parcelado: N parcelas geradas; à vista pago: 1 parcela paga automática
+      const parcelasValidas = form.forma_parcelamento === 'parcelado'
+        ? parcelas.filter(p => p.data_vencimento)
+        : (form.status_pagamento === 'pago'
+            ? [{ numero: 1, valor: valorTotal, data_vencimento: form.data_pagamento || dataInicioContrato, status: 'paga', data_pagamento: form.data_pagamento || null }]
+            : [])
       if (parcelasValidas.length > 0) {
         const parcelasPayload = parcelasValidas.map(p => ({
           contrato_id,
