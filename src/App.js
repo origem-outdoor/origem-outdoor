@@ -34,7 +34,7 @@ const NAV = [
   { id: 'clientes',    label: 'Clientes',        icon: '👤' },
   { id: 'comissoes',   label: 'Comissões',       icon: '🤝' },
   { id: 'contaspagar', label: 'Contas a Pagar',  icon: '💸' },
-  { id: 'vendedores',      label: 'Vendedores',       icon: '🧑‍💼' },
+  { id: 'vendedores',      label: 'Vendedores',       icon: '👔' },
   { id: 'disponibilidade', label: 'Disponibilidade',  icon: '🗓' },
   { id: 'relatorios',      label: 'Relatórios',       icon: '📊' },
 ]
