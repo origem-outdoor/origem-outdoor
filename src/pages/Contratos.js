@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
-import { PageHeader, Badge, Btn, Input, Select, Modal, formatBRL, formatDate, diasRestantes, STATUS_CONTRATO, STATUS_PAGAMENTO } from '../components/UI'
-
-const EMAILS_AUTORIZADOS = ['gui.barboosa69@gmail.com', 'laiana@gmail.com']
+import { PageHeader, Badge, Btn, Input, Select, Modal, formatBRL, formatDate, diasRestantes, STATUS_PAGAMENTO, COLORS } from '../components/UI'
 
 const FORM_VAZIO = {
-  placa_ids: [], // múltiplas placas
+  placa_ids: [],
   cliente_id: '',
+  vendedor_id: '',
   data_inicio: '', data_fim: '', duracao_tipo: '3m',
   modalidade: 'veiculacao',
   valor_veiculacao: 0, valor_arte: 0, valor_impressao: 0,
@@ -14,7 +13,8 @@ const FORM_VAZIO = {
   custo_extra: 0, descricao_custo_extra: '',
   percentual_imposto: 0, valor_imposto: 0,
   emite_nota: false,
-  forma_pagamento: 'pix', condicao_pagamento: 'antecipado',
+  forma_pagamento: 'pix',
+  forma_parcelamento: 'avista',
   status_pagamento: 'aguardando', data_pagamento: '', observacoes_pagamento: '',
   historico: false, status: 'ativo', observacoes: ''
 }
@@ -28,9 +28,27 @@ const DURACOES = [
   { value: 'custom', label: 'Personalizado' },
 ]
 
+const FORMAS_PARCELAMENTO = [
+  { value: 'avista', label: 'À vista' },
+  { value: 'mensal', label: 'Mensal' },
+  { value: 'bimestral', label: 'Bimestral' },
+  { value: 'trimestral', label: 'Trimestral' },
+  { value: 'semestral', label: 'Semestral' },
+]
+
+const STATUS_DINAMICO = {
+  reservado: { label: 'Reservado', bg: '#EDE7F6', text: '#5E35B1', border: '#C5B8EF' },
+  ativo:     { label: 'Ativo',     bg: '#E8F5E9', text: '#2E7D32', border: '#A5D6A7' },
+  vencendo:  { label: 'Vencendo',  bg: '#FFFDE7', text: '#F57F17', border: '#FFE082' },
+  expirado:  { label: 'Expirado',  bg: '#FFEBEE', text: '#C62828', border: '#EF9A9A' },
+  encerrado: { label: 'Encerrado', bg: '#F5F5F5', text: '#757575', border: '#E0E0E0' },
+  renovado:  { label: 'Renovado',  bg: '#E1F5FE', text: '#0277BD', border: '#81D4FA' },
+  cancelado: { label: 'Cancelado', bg: '#FFEBEE', text: '#C62828', border: '#EF9A9A' },
+}
+
 function calcDataFim(inicio, duracao) {
   if (!inicio || duracao === 'custom') return ''
-  const d = new Date(inicio)
+  const d = new Date(inicio + 'T00:00:00')
   if (duracao === '14d') d.setDate(d.getDate() + 14)
   else if (duracao === '28d') d.setDate(d.getDate() + 28)
   else if (duracao === '3m') d.setMonth(d.getMonth() + 3)
@@ -39,13 +57,65 @@ function calcDataFim(inicio, duracao) {
   return d.toISOString().split('T')[0]
 }
 
+// Status calculado dinamicamente pelas datas
+function calcStatus(dataInicio, dataFim, statusManual) {
+  if (['encerrado', 'renovado', 'cancelado'].includes(statusManual)) return statusManual
+  if (!dataInicio || !dataFim) return statusManual || 'ativo'
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0)
+  const inicio = new Date(dataInicio + 'T00:00:00')
+  const fim = new Date(dataFim + 'T23:59:59')
+  if (inicio > hoje) return 'reservado'
+  if (fim < hoje) return 'expirado'
+  const diasRestam = Math.round((fim - hoje) / 86400000)
+  if (diasRestam <= 30) return 'vencendo'
+  return 'ativo'
+}
+
+// Calcula número de parcelas baseado nas datas do contrato
+function calcNumParcelas(dataInicio, dataFim, formaParcelamento) {
+  if (!dataInicio || !dataFim || formaParcelamento === 'avista') return 1
+  const intervalos = { mensal: 1, bimestral: 2, trimestral: 3, semestral: 6 }
+  const meses = intervalos[formaParcelamento] || 1
+  const inicio = new Date(dataInicio + 'T00:00:00')
+  const fim = new Date(dataFim + 'T23:59:59')
+  const diffMeses = (fim.getFullYear() - inicio.getFullYear()) * 12 + (fim.getMonth() - inicio.getMonth())
+  return Math.max(1, Math.ceil(diffMeses / meses))
+}
+
+// Gera lista de parcelas com valores e datas
+function gerarParcelasContrato(valorTotal, formaParcelamento, dataInicio, dataFim) {
+  if (!valorTotal || !dataInicio) {
+    return [{ numero: 1, valor: valorTotal || 0, data_vencimento: dataInicio || '', status: 'pendente' }]
+  }
+  if (formaParcelamento === 'avista') {
+    return [{ numero: 1, valor: Number(valorTotal) || 0, data_vencimento: dataInicio || '', status: 'pendente' }]
+  }
+  const numParcelas = calcNumParcelas(dataInicio, dataFim, formaParcelamento)
+  const intervalos = { mensal: 1, bimestral: 2, trimestral: 3, semestral: 6 }
+  const meses = intervalos[formaParcelamento] || 1
+  const vt = Number(valorTotal) || 0
+  const valorParcela = parseFloat((vt / numParcelas).toFixed(2))
+  const diferenca = parseFloat((vt - valorParcela * numParcelas).toFixed(2))
+
+  const parcelas = []
+  for (let i = 0; i < numParcelas; i++) {
+    const d = new Date(dataInicio + 'T00:00:00')
+    d.setMonth(d.getMonth() + i * meses)
+    const valor = i === numParcelas - 1 ? parseFloat((valorParcela + diferenca).toFixed(2)) : valorParcela
+    parcelas.push({ numero: i + 1, valor, data_vencimento: d.toISOString().split('T')[0], status: 'pendente' })
+  }
+  return parcelas
+}
+
 export default function Contratos() {
   const [contratos, setContratos] = useState([])
   const [placas, setPlacas] = useState([])
   const [clientes, setClientes] = useState([])
+  const [vendedores, setVendedores] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(FORM_VAZIO)
+  const [parcelas, setParcelas] = useState([])
   const [salvando, setSalvando] = useState(false)
   const [filtro, setFiltro] = useState('ativo')
   const [novoCliente, setNovoCliente] = useState({ nome: '', telefone: '' })
@@ -53,16 +123,21 @@ export default function Contratos() {
   const [salvandoCliente, setSalvandoCliente] = useState(false)
 
   const carregar = async () => {
-    const [co, pl, cl] = await Promise.all([
-      supabase.from('contratos').select('*, clientes(nome), contrato_placas(placa_id, face, valor_por_placa, placas(nome))').order('created_at', { ascending: false }),
+    const [co, pl, cl, ve] = await Promise.all([
+      supabase.from('contratos')
+        .select('*, clientes(nome), vendedores(nome), contrato_placas(placa_id, face, valor_por_placa, placas(nome))')
+        .order('created_at', { ascending: false }),
       supabase.from('placas').select('id, nome, tipo, aluguel_terreno_mensal').eq('status', 'ativa'),
       supabase.from('clientes').select('id, nome').order('nome'),
+      supabase.from('vendedores').select('id, nome').eq('ativo', true).order('nome'),
     ])
     setContratos(co.data || [])
     setPlacas(pl.data || [])
     setClientes(cl.data || [])
+    setVendedores(ve.data || [])
     setLoading(false)
   }
+
   useEffect(() => { carregar() }, [])
 
   const set = (k, v) => setForm(f => {
@@ -73,6 +148,23 @@ export default function Contratos() {
     return novo
   })
 
+  // Recalcula parcelas quando mudam campos relevantes
+  useEffect(() => {
+    if (!modal) return
+    const vt = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
+    if (vt > 0 && form.data_inicio) {
+      setParcelas(gerarParcelasContrato(vt, form.forma_parcelamento, form.data_inicio, form.data_fim))
+    }
+  }, [form.valor_veiculacao, form.valor_arte, form.valor_impressao, form.forma_parcelamento, form.data_inicio, form.data_fim, modal])
+
+  const atualizarParcela = (idx, campo, valor) => {
+    setParcelas(prev => {
+      const novas = [...prev]
+      novas[idx] = { ...novas[idx], [campo]: campo === 'valor' ? parseFloat(valor) || 0 : valor }
+      return novas
+    })
+  }
+
   const togglePlaca = (id) => {
     setForm(f => {
       const ids = f.placa_ids.includes(id) ? f.placa_ids.filter(i => i !== id) : [...f.placa_ids, id]
@@ -80,12 +172,21 @@ export default function Contratos() {
     })
   }
 
-  const abrir = (c = null) => {
+  const abrir = async (c = null) => {
     if (c) {
       const placa_ids = (c.contrato_placas || []).map(cp => cp.placa_id)
-      setForm({ ...FORM_VAZIO, ...c, placa_ids })
+      setForm({ ...FORM_VAZIO, ...c, placa_ids, forma_parcelamento: c.forma_parcelamento || 'avista' })
+      // Carregar parcelas existentes
+      const { data: parcsExist } = await supabase.from('parcelas').select('*').eq('contrato_id', c.id).order('numero')
+      if (parcsExist && parcsExist.length > 0) {
+        setParcelas(parcsExist)
+      } else {
+        const vt = c.valor_total || 0
+        setParcelas(gerarParcelasContrato(vt, c.forma_parcelamento || 'avista', c.data_inicio, c.data_fim))
+      }
     } else {
       setForm(FORM_VAZIO)
+      setParcelas([{ numero: 1, valor: 0, data_vencimento: '', status: 'pendente' }])
     }
     setNovoCliente({ nome: '', telefone: '' })
     setCriandoCliente(false)
@@ -99,11 +200,7 @@ export default function Contratos() {
       nome: novoCliente.nome.trim(),
       telefone: novoCliente.telefone.trim() || null,
     }).select('id, nome').single()
-    if (error || !data) {
-      alert('Erro ao cadastrar cliente.')
-      setSalvandoCliente(false)
-      return
-    }
+    if (error || !data) { alert('Erro ao cadastrar cliente.'); setSalvandoCliente(false); return }
     setClientes(prev => [...prev, data].sort((a, b) => a.nome.localeCompare(b.nome)))
     set('cliente_id', data.id)
     setNovoCliente({ nome: '', telefone: '' })
@@ -118,9 +215,11 @@ export default function Contratos() {
     const qtd = form.placa_ids.length
     const valorTotal = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
     const valorPorPlaca = qtd > 0 ? valorTotal / qtd : 0
+    const statusCalc = calcStatus(form.data_inicio, form.data_fim, form.status)
 
     const payload = {
       cliente_id: form.cliente_id || null,
+      vendedor_id: form.vendedor_id || null,
       data_inicio: form.data_inicio,
       data_fim: form.data_fim,
       duracao_tipo: form.duracao_tipo,
@@ -137,16 +236,15 @@ export default function Contratos() {
       valor_imposto: Number(form.valor_imposto),
       emite_nota: form.emite_nota,
       forma_pagamento: form.forma_pagamento,
-      condicao_pagamento: form.condicao_pagamento,
+      forma_parcelamento: form.forma_parcelamento,
       status_pagamento: form.status_pagamento,
       data_pagamento: form.data_pagamento || null,
       observacoes_pagamento: form.observacoes_pagamento,
       historico: form.historico,
-      status: form.status,
+      status: statusCalc,
       observacoes: form.observacoes,
       qtd_placas: qtd,
       valor_por_placa: valorPorPlaca,
-      // manter placa_id para compatibilidade (primeira placa)
       placa_id: form.placa_ids[0],
       face: 'AB',
     }
@@ -157,18 +255,35 @@ export default function Contratos() {
       if (insertError) { alert('Erro ao salvar: ' + insertError.message); setSalvando(false); return }
       contrato_id = data?.id
     } else {
-      await supabase.from('contratos').update(payload).eq('id', form.id)
+      const { error: updError } = await supabase.from('contratos').update(payload).eq('id', form.id)
+      if (updError) { alert('Erro ao atualizar: ' + updError.message); setSalvando(false); return }
       contrato_id = form.id
       await supabase.from('contrato_placas').delete().eq('contrato_id', contrato_id)
+      await supabase.from('parcelas').delete().eq('contrato_id', contrato_id)
     }
 
-    // Inserir relacionamentos placa x contrato
     if (contrato_id) {
-      const placasRel = form.placa_ids.map(placa_id => {
-        const placa = placas.find(p => p.id === placa_id)
-        return { contrato_id, placa_id, face: 'AB', valor_por_placa: valorPorPlaca }
-      })
+      // Placas
+      const placasRel = form.placa_ids.map(placa_id => ({
+        contrato_id, placa_id, face: 'AB', valor_por_placa: valorPorPlaca
+      }))
       await supabase.from('contrato_placas').insert(placasRel)
+
+      // Parcelas
+      const parcelasValidas = parcelas.filter(p => p.data_vencimento)
+      if (parcelasValidas.length > 0) {
+        const parcelasPayload = parcelasValidas.map(p => ({
+          contrato_id,
+          numero: p.numero,
+          valor: p.valor,
+          data_vencimento: p.data_vencimento,
+          status: p.status || 'pendente',
+          observacoes: p.observacoes || null,
+          data_pagamento: p.data_pagamento || null,
+        }))
+        const { error: parcErr } = await supabase.from('parcelas').insert(parcelasPayload)
+        if (parcErr) console.warn('Erro ao salvar parcelas:', parcErr.message)
+      }
     }
 
     setSalvando(false)
@@ -182,12 +297,33 @@ export default function Contratos() {
     carregar()
   }
 
-  const contFiltrados = filtro === 'todos' ? contratos : contratos.filter(c => c.status === filtro)
+  // Enriquece com status dinâmico calculado pelas datas
+  const contratosEnriquecidos = useMemo(() => contratos.map(c => ({
+    ...c,
+    status_calc: calcStatus(c.data_inicio, c.data_fim, c.status)
+  })), [contratos])
+
+  const FILTROS = [
+    ['todos', 'Todos'],
+    ['reservado', 'Reservados'],
+    ['ativo', 'Ativos'],
+    ['vencendo', 'Vencendo'],
+    ['encerrado', 'Encerrados'],
+    ['renovado', 'Renovados'],
+    ['cancelado', 'Cancelados'],
+  ]
+
+  const contFiltrados = filtro === 'todos'
+    ? contratosEnriquecidos
+    : contratosEnriquecidos.filter(c => c.status_calc === filtro)
+
   const valorTotal = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
   const custoTotal = Number(form.custo_colador) + Number(form.custo_impressao) + Number(form.custo_terreno_proporcional) + Number(form.custo_extra) + Number(form.valor_imposto)
   const lucro = valorTotal - custoTotal
   const qtdSelecionadas = form.placa_ids.length
-  const valorPorPlaca = qtdSelecionadas > 0 ? valorTotal / qtdSelecionadas : 0
+  const valorPorPlacaCalc = qtdSelecionadas > 0 ? valorTotal / qtdSelecionadas : 0
+  const statusDinamicoForm = calcStatus(form.data_inicio, form.data_fim, form.status)
+  const stInfo = STATUS_DINAMICO[statusDinamicoForm] || STATUS_DINAMICO.ativo
 
   if (loading) return <div style={{ color: '#888' }}>Carregando...</div>
 
@@ -195,51 +331,80 @@ export default function Contratos() {
     <div>
       <PageHeader
         title="Contratos"
-        sub={`${contratos.filter(c => c.status === 'ativo').length} ativos`}
+        sub={`${contratosEnriquecidos.filter(c => c.status_calc === 'ativo').length} ativos · ${contratosEnriquecidos.filter(c => c.status_calc === 'reservado').length} reservados`}
         action={<Btn onClick={() => abrir()}>+ Novo contrato</Btn>}
       />
 
+      {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {[['todos', 'Todos'], ['ativo', 'Ativos'], ['encerrado', 'Encerrados'], ['renovado', 'Renovados']].map(([v, l]) => (
-          <button key={v} onClick={() => setFiltro(v)} style={{
-            padding: '7px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-            fontWeight: filtro === v ? 600 : 400,
-            background: filtro === v ? '#1a1a18' : '#fff',
-            color: filtro === v ? '#fff' : '#555',
-            border: `1px solid ${filtro === v ? '#1a1a18' : '#ddd'}`,
-          }}>{l}</button>
-        ))}
+        {FILTROS.map(([v, l]) => {
+          const count = v === 'todos' ? contratosEnriquecidos.length : contratosEnriquecidos.filter(c => c.status_calc === v).length
+          return (
+            <button key={v} onClick={() => setFiltro(v)} style={{
+              padding: '7px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+              fontWeight: filtro === v ? 600 : 400,
+              background: filtro === v ? '#1a1a18' : '#fff',
+              color: filtro === v ? '#fff' : '#555',
+              border: `1px solid ${filtro === v ? '#1a1a18' : '#ddd'}`,
+            }}>
+              {l}{count > 0 && <span style={{ opacity: 0.65, fontSize: 11, marginLeft: 4 }}>({count})</span>}
+            </button>
+          )
+        })}
       </div>
 
+      {/* Lista */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {contFiltrados.map(c => {
+          const st = c.status_calc
+          const stCor = STATUS_DINAMICO[st] || STATUS_DINAMICO.ativo
           const dias = diasRestantes(c.data_fim)
-          const urgente = c.status === 'ativo' && dias !== null && dias >= 0 && dias <= 15
           const placasNomes = (c.contrato_placas || []).map(cp => cp.placas?.nome).filter(Boolean)
           return (
             <div key={c.id} style={{
               background: '#fff', borderRadius: 12,
-              border: `1px solid ${urgente ? '#D4A01744' : '#eee'}`,
+              border: `1px solid ${st === 'vencendo' ? '#D4A01744' : '#eee'}`,
               padding: '16px 20px',
-              boxShadow: urgente ? '0 0 0 2px #D4A01722' : 'none'
+              boxShadow: st === 'vencendo' ? '0 0 0 2px #D4A01722' : 'none'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a18' }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a18', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {c.clientes?.nome || 'Sem cliente'}
-                    {c.historico && <span style={{ fontSize: 10, background: '#EEEDFE', color: '#3C3489', borderRadius: 10, padding: '2px 7px', marginLeft: 8, fontWeight: 600 }}>HISTÓRICO</span>}
+                    {c.historico && <span style={{ fontSize: 10, background: '#EEEDFE', color: '#3C3489', borderRadius: 10, padding: '2px 7px', fontWeight: 600 }}>HISTÓRICO</span>}
+                    {c.vendedores?.nome && <span style={{ fontSize: 11, background: '#E3F2FD', color: '#1565C0', borderRadius: 10, padding: '2px 7px', fontWeight: 600 }}>👤 {c.vendedores.nome}</span>}
                   </div>
                   <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                     {placasNomes.length > 0 ? placasNomes.join(', ') : 'Sem placas'}
                     {c.qtd_placas > 1 && <span style={{ marginLeft: 6, background: '#EEEDFE', color: '#3C3489', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 600 }}>{c.qtd_placas} placas</span>}
                     &nbsp;·&nbsp;{formatDate(c.data_inicio)} → {formatDate(c.data_fim)}
-                    {dias !== null && c.status === 'ativo' && <span style={{ marginLeft: 6, color: urgente ? '#B45309' : '#888' }}>({dias < 0 ? 'vencido' : `${dias}d restantes`})</span>}
+                    {dias !== null && (st === 'ativo' || st === 'vencendo') && (
+                      <span style={{ marginLeft: 6, color: st === 'vencendo' ? '#B45309' : '#888' }}>
+                        ({dias < 0 ? 'vencido' : `${dias}d restantes`})
+                      </span>
+                    )}
+                    {st === 'reservado' && c.data_inicio && (
+                      <span style={{ marginLeft: 6, color: '#5E35B1' }}>
+                        (inicia em {Math.max(0, Math.round((new Date(c.data_inicio + 'T00:00:00') - new Date().setHours(0,0,0,0)) / 86400000))}d)
+                      </span>
+                    )}
                   </div>
+                  {c.forma_parcelamento && c.forma_parcelamento !== 'avista' && (
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                      💳 Pgto {FORMAS_PARCELAMENTO.find(f => f.value === c.forma_parcelamento)?.label || c.forma_parcelamento}
+                    </div>
+                  )}
                   {c.qtd_placas > 1 && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{formatBRL(c.valor_por_placa)} por placa</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Badge texto={STATUS_PAGAMENTO[c.status_pagamento]?.label} cor={STATUS_PAGAMENTO[c.status_pagamento]?.cor} />
-                  <Badge texto={STATUS_CONTRATO[c.status]?.label} cor={STATUS_CONTRATO[c.status]?.cor} />
+                  <Badge texto={STATUS_PAGAMENTO[c.status_pagamento]?.label || c.status_pagamento} cor={STATUS_PAGAMENTO[c.status_pagamento]?.cor} />
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
+                    borderRadius: 20, fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
+                    background: stCor.bg, color: stCor.text, border: `1px solid ${stCor.border}`
+                  }}>
+                    {stCor.label}
+                  </span>
                   <div style={{ fontSize: 15, fontWeight: 700, color: '#0A5C42' }}>{formatBRL(c.valor_total)}</div>
                 </div>
               </div>
@@ -253,10 +418,21 @@ export default function Contratos() {
         {contFiltrados.length === 0 && <div style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: 40 }}>Nenhum contrato encontrado.</div>}
       </div>
 
+      {/* Modal */}
       {modal && (
-        <Modal title={modal === 'novo' ? 'Novo Contrato' : 'Editar Contrato'} onClose={() => setModal(null)} width={620}>
-          
-          {/* Seleção de placas */}
+        <Modal title={modal === 'novo' ? 'Novo Contrato' : 'Editar Contrato'} onClose={() => setModal(null)} width={680}>
+
+          {/* Preview de status dinâmico */}
+          {form.data_inicio && form.data_fim && (
+            <div style={{
+              padding: '8px 14px', borderRadius: 8, marginBottom: 14, fontSize: 12, fontWeight: 600,
+              background: stInfo.bg, color: stInfo.text, border: `1px solid ${stInfo.border}`
+            }}>
+              Status automático pelas datas: {stInfo.label}
+            </div>
+          )}
+
+          {/* Placas */}
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 8 }}>
               PLACAS DO CONTRATO * <span style={{ color: '#888', fontWeight: 400 }}>({qtdSelecionadas} selecionada{qtdSelecionadas !== 1 ? 's' : ''})</span>
@@ -281,59 +457,43 @@ export default function Contratos() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            {/* Campo cliente com opção de criar novo */}
+            {/* Cliente */}
             <div style={{ gridColumn: '1/-1', marginBottom: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>CLIENTE</label>
                 {!criandoCliente && (
-                  <button
-                    type="button"
-                    onClick={() => setCriandoCliente(true)}
-                    style={{
-                      fontSize: 11, color: '#1a1a18', background: 'none', border: 'none',
-                      cursor: 'pointer', fontWeight: 600, textDecoration: 'underline', padding: 0
-                    }}
-                  >
-                    + Cadastrar novo
-                  </button>
+                  <button type="button" onClick={() => setCriandoCliente(true)} style={{
+                    fontSize: 11, color: '#1a1a18', background: 'none', border: 'none',
+                    cursor: 'pointer', fontWeight: 600, textDecoration: 'underline', padding: 0
+                  }}>+ Cadastrar novo</button>
                 )}
               </div>
-
               {criandoCliente ? (
                 <div style={{ background: '#F7F6F2', borderRadius: 10, padding: 12, border: '1.5px solid #ddd' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>NOVO CLIENTE RÁPIDO</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
-                    <Input
-                      label="Nome *"
-                      value={novoCliente.nome}
-                      onChange={v => setNovoCliente(prev => ({ ...prev, nome: v }))}
-                    />
-                    <Input
-                      label="Telefone"
-                      value={novoCliente.telefone}
-                      onChange={v => setNovoCliente(prev => ({ ...prev, telefone: v }))}
-                    />
+                    <Input label="Nome *" value={novoCliente.nome} onChange={v => setNovoCliente(prev => ({ ...prev, nome: v }))} />
+                    <Input label="Telefone" value={novoCliente.telefone} onChange={v => setNovoCliente(prev => ({ ...prev, telefone: v }))} />
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <Btn onClick={salvarClienteRapido} disabled={salvandoCliente} size="sm">
-                      {salvandoCliente ? 'Salvando...' : 'Salvar cliente'}
-                    </Btn>
-                    <Btn onClick={() => { setCriandoCliente(false); setNovoCliente({ nome: '', telefone: '' }) }} variant="secondary" size="sm">
-                      Cancelar
-                    </Btn>
+                    <Btn onClick={salvarClienteRapido} disabled={salvandoCliente} size="sm">{salvandoCliente ? 'Salvando...' : 'Salvar cliente'}</Btn>
+                    <Btn onClick={() => { setCriandoCliente(false); setNovoCliente({ nome: '', telefone: '' }) }} variant="secondary" size="sm">Cancelar</Btn>
                   </div>
                 </div>
               ) : (
-                <Select
-                  label=""
-                  value={form.cliente_id || ''}
-                  onChange={v => set('cliente_id', v)}
-                  options={[
-                    { value: '', label: 'Sem cliente (preencher depois)' },
-                    ...clientes.map(c => ({ value: c.id, label: c.nome }))
-                  ]}
-                />
+                <Select label="" value={form.cliente_id || ''} onChange={v => set('cliente_id', v)} options={[
+                  { value: '', label: 'Sem cliente (preencher depois)' },
+                  ...clientes.map(c => ({ value: c.id, label: c.nome }))
+                ]} />
               )}
+            </div>
+
+            {/* Vendedor */}
+            <div style={{ gridColumn: '1/-1', marginBottom: 4 }}>
+              <Select label="Vendedor" value={form.vendedor_id || ''} onChange={v => set('vendedor_id', v)} options={[
+                { value: '', label: 'Sem vendedor' },
+                ...vendedores.map(v => ({ value: v.id, label: v.nome }))
+              ]} />
             </div>
 
             <Select label="Duração" value={form.duracao_tipo} onChange={v => set('duracao_tipo', v)} options={DURACOES} />
@@ -346,6 +506,7 @@ export default function Contratos() {
             ]} style={{ gridColumn: '1/-1' }} />
           </div>
 
+          {/* Receitas */}
           <div style={{ background: '#F7F6F2', borderRadius: 10, padding: 14, marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>RECEITAS</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 12px' }}>
@@ -356,13 +517,10 @@ export default function Contratos() {
               </>}
             </div>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#0A5C42' }}>Total: {formatBRL(valorTotal)}</div>
-            {qtdSelecionadas > 1 && (
-              <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                {formatBRL(valorPorPlaca)} por placa ({qtdSelecionadas} placas)
-              </div>
-            )}
+            {qtdSelecionadas > 1 && <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{formatBRL(valorPorPlacaCalc)} por placa ({qtdSelecionadas} placas)</div>}
           </div>
 
+          {/* Custos */}
           <div style={{ background: '#FFF5F5', borderRadius: 10, padding: 14, marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>CUSTOS</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
@@ -374,11 +532,10 @@ export default function Contratos() {
               <Input label="Descrição custo extra" value={form.descricao_custo_extra} onChange={v => set('descricao_custo_extra', v)} />
             </div>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#c0392b' }}>Total custos: {formatBRL(custoTotal)}</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: lucro >= 0 ? '#0A5C42' : '#c0392b', marginTop: 4 }}>
-              Lucro líquido: {formatBRL(lucro)}
-            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: lucro >= 0 ? '#0A5C42' : '#c0392b', marginTop: 4 }}>Lucro líquido: {formatBRL(lucro)}</div>
           </div>
 
+          {/* Pagamento */}
           <div style={{ background: '#F0F5FF', borderRadius: 10, padding: 14, marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>PAGAMENTO</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
@@ -388,25 +545,61 @@ export default function Contratos() {
                 { value: 'transferencia', label: 'Transferência' },
                 { value: 'boleto', label: 'Boleto' },
               ]} />
-              <Select label="Condição" value={form.condicao_pagamento} onChange={v => set('condicao_pagamento', v)} options={[
-                { value: 'antecipado', label: 'Antecipado (início)' },
-                { value: 'pos_veiculacao', label: 'Pós-veiculação (fim)' },
-                { value: 'parcelado', label: 'Parcelado' },
-              ]} />
-              <Select label="Status pagamento" value={form.status_pagamento} onChange={v => set('status_pagamento', v)} options={[
+              <Select label="Condição / Parcelamento" value={form.forma_parcelamento} onChange={v => set('forma_parcelamento', v)} options={FORMAS_PARCELAMENTO} />
+              <Select label="Status pagamento geral" value={form.status_pagamento} onChange={v => set('status_pagamento', v)} options={[
                 { value: 'aguardando', label: 'Aguardando' },
                 { value: 'pago', label: 'Pago' },
                 { value: 'parcial', label: 'Pago parcialmente' },
                 { value: 'atrasado', label: 'Em atraso' },
               ]} />
-              <Input label="Data de pagamento" value={form.data_pagamento || ''} onChange={v => set('data_pagamento', v)} type="date" />
+              <Input label="Data de pagamento (à vista)" value={form.data_pagamento || ''} onChange={v => set('data_pagamento', v)} type="date" />
             </div>
-            <div style={{ marginBottom: 8 }}>
+            <div style={{ marginTop: 8 }}>
               <label style={{ fontSize: 12, fontWeight: 500, color: '#555', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.emite_nota} onChange={e => set('emite_nota', e.target.checked)} />
                 Emite nota fiscal
               </label>
             </div>
+
+            {/* Parcelas */}
+            {parcelas.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 8 }}>
+                  PARCELAS — {parcelas.length}x · total {formatBRL(parcelas.reduce((s, p) => s + (Number(p.valor) || 0), 0))}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {parcelas.map((p, idx) => (
+                    <div key={idx} style={{
+                      display: 'grid', gridTemplateColumns: '28px 1fr 1fr 110px', gap: 8, alignItems: 'center',
+                      background: p.status === 'pago' ? '#F0FFF4' : p.status === 'atrasado' ? '#FFF5F5' : '#fff',
+                      borderRadius: 8, padding: '8px 10px',
+                      border: `1px solid ${p.status === 'pago' ? '#A5D6A7' : p.status === 'atrasado' ? '#EF9A9A' : '#E0E0E0'}`
+                    }}>
+                      <div style={{ fontSize: 11, color: '#999', fontWeight: 700, textAlign: 'center' }}>#{p.numero}</div>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Valor (R$)</div>
+                        <input type="number" value={p.valor} onChange={e => atualizarParcela(idx, 'valor', e.target.value)}
+                          style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Vencimento</div>
+                        <input type="date" value={p.data_vencimento || ''} onChange={e => atualizarParcela(idx, 'data_vencimento', e.target.value)}
+                          style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Status</div>
+                        <select value={p.status || 'pendente'} onChange={e => atualizarParcela(idx, 'status', e.target.value)}
+                          style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12, background: '#fff', boxSizing: 'border-box' }}>
+                          <option value="pendente">Pendente</option>
+                          <option value="pago">Pago</option>
+                          <option value="atrasado">Atrasado</option>
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
@@ -416,8 +609,8 @@ export default function Contratos() {
             </label>
           </div>
 
-          <Select label="Status do contrato" value={form.status} onChange={v => set('status', v)} options={[
-            { value: 'ativo', label: 'Ativo' },
+          <Select label="Status manual (só para encerrar / renovar / cancelar)" value={form.status} onChange={v => set('status', v)} options={[
+            { value: 'ativo', label: 'Automático (calculado pelas datas)' },
             { value: 'encerrado', label: 'Encerrado' },
             { value: 'renovado', label: 'Renovado' },
             { value: 'cancelado', label: 'Cancelado' },

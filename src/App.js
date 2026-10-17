@@ -9,6 +9,8 @@ import Clientes from './pages/Clientes'
 import Comissoes from './pages/Comissoes'
 import Relatorios from './pages/Relatorios'
 import ContasPagar from './pages/ContasPagar'
+import Vendedores from './pages/Vendedores'
+import Disponibilidade from './pages/Disponibilidade'
 
 export const AuthContext = createContext(null)
 export const useAuth = () => useContext(AuthContext)
@@ -20,7 +22,9 @@ const PAGES = {
   clientes:     Clientes,
   comissoes:    Comissoes,
   relatorios:   Relatorios,
-  contaspagar:  ContasPagar,
+  contaspagar:     ContasPagar,
+  vendedores:      Vendedores,
+  disponibilidade: Disponibilidade,
 }
 
 const NAV = [
@@ -30,7 +34,9 @@ const NAV = [
   { id: 'clientes',    label: 'Clientes',        icon: '👤' },
   { id: 'comissoes',   label: 'Comissões',       icon: '🤝' },
   { id: 'contaspagar', label: 'Contas a Pagar',  icon: '💸' },
-  { id: 'relatorios',  label: 'Relatórios',      icon: '📊' },
+  { id: 'vendedores',      label: 'Vendedores',       icon: '🧑‍💼' },
+  { id: 'disponibilidade', label: 'Disponibilidade',  icon: '🗓' },
+  { id: 'relatorios',      label: 'Relatórios',       icon: '📊' },
 ]
 
 function diasParaVencer(dataVenc) {
