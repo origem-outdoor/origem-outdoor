@@ -259,14 +259,30 @@ export default function Dashboard({ setPage = () => {} }) {
   })
   const faturamentoAtivo = contratosAtivos.reduce((s, c) => s + (c.valor_total || 0), 0)
 
-  // Receita do mês atual (parcelas pagas ou vencidas neste mês)
+  // Receita do mês atual:
+  // Contratos que iniciaram neste mês (pagos à vista na assinatura)
+  // + parcelas com vencimento neste mês que foram pagas (contratos parcelados)
   const mesAtual = hoje.getMonth(), anoAtual = hoje.getFullYear()
-  const receitaMes = dados.parcelas.filter(p => {
-    const d = p.data_pagamento || p.data_vencimento
+
+  // Contratos à vista: data_inicio no mês atual
+  const receitaContratos = dados.contratos.filter(c => {
+    if (!c.data_inicio || ['cancelado'].includes(c.status)) return false
+    const di = new Date(c.data_inicio + 'T00:00:00')
+    return di.getMonth() === mesAtual && di.getFullYear() === anoAtual
+  }).reduce((s, c) => s + (c.valor_total || 0), 0)
+
+  // Parcelas pagas ou com vencimento neste mês (contratos mensais)
+  const receitaParcelas = dados.parcelas.filter(p => {
+    // Se paga, usa data_pagamento; se não, usa vencimento neste mês como referência
+    const d = p.status === 'paga' ? (p.data_pagamento || p.data_vencimento) : p.data_vencimento
     if (!d) return false
-    const dt = new Date(d)
-    return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual && (p.status === 'paga')
+    const dt = new Date(d + 'T00:00:00')
+    if (dt.getMonth() !== mesAtual || dt.getFullYear() !== anoAtual) return false
+    // Conta parcelas pagas OU pendentes/atrasadas com vencimento neste mês
+    return p.status !== 'cancelada'
   }).reduce((s, p) => s + (p.valor || 0), 0)
+
+  const receitaMes = receitaContratos + receitaParcelas
 
   // Parcelas atrasadas
   const parcelasAtrasadas = dados.parcelas.filter(p => {
@@ -404,7 +420,7 @@ export default function Dashboard({ setPage = () => {} }) {
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
         <KpiCard icon={<IcoContract />} label="Contratos Ativos" value={contratosAtivos.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> em relacao ao mes passado</>} />
-        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes)} sub={<>parcelas pagas em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}</>} />
+        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes)} sub={<>contratos + parcelas de {new Date().toLocaleDateString('pt-BR', {month: 'long'})}</>} />
         <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue />
         <KpiCard icon={<IcoBoard />}    label="Placas Disponiveis" value={<>{placasDisp} <span style={{ fontSize: 15, fontWeight: 600, color: C.textLight }}>de {totalPlacas}</span></>} bar={pctDisp} />
         <KpiCard icon={<IcoUsers />}    label="Clientes Cadastrados" value={dados.clientes.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> novos este mes</>} />
