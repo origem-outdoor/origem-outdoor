@@ -233,26 +233,47 @@ function DonutChart({ ativas, disponiveis, manutencao }) {
 
 export default function Dashboard({ setPage = () => {} }) {
   const navigate = (page) => setPage(page)
-  const [dados, setDados] = useState({ placas: [], contratos: [], clientes: [] })
+  const [dados, setDados] = useState({ placas: [], contratos: [], clientes: [], parcelas: [] })
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState(6)
   const hoje = new Date()
 
   useEffect(() => {
     async function carregar() {
-      const [p, c, cl] = await Promise.all([
+      const [p, c, cl, par] = await Promise.all([
         supabase.from('placas').select('*'),
-        supabase.from('contratos').select('*, placas(nome, status), clientes(nome)').order('data_inicio', { ascending: false }),
+        supabase.from('contratos').select('*, placas(nome, status), clientes(nome), contrato_placas(placa_id)').order('data_inicio', { ascending: false }),
         supabase.from('clientes').select('*'),
+        supabase.from('parcelas').select('*'),
       ])
-      setDados({ placas: p.data || [], contratos: c.data || [], clientes: cl.data || [] })
+      setDados({ placas: p.data || [], contratos: c.data || [], clientes: cl.data || [], parcelas: par.data || [] })
       setLoading(false)
     }
     carregar()
   }, [])
 
-  const contratosAtivos  = dados.contratos.filter(c => c.status === 'ativo')
+  const contratosAtivos  = dados.contratos.filter(c => {
+    if (!c.data_inicio || !c.data_fim) return c.status === 'ativo'
+    const di = new Date(c.data_inicio + 'T00:00:00'), df = new Date(c.data_fim + 'T23:59:59')
+    return di <= hoje && df >= hoje && !['encerrado','renovado','cancelado'].includes(c.status)
+  })
   const faturamentoAtivo = contratosAtivos.reduce((s, c) => s + (c.valor_total || 0), 0)
+
+  // Receita do mês atual (parcelas pagas ou vencidas neste mês)
+  const mesAtual = hoje.getMonth(), anoAtual = hoje.getFullYear()
+  const receitaMes = dados.parcelas.filter(p => {
+    const d = p.data_pagamento || p.data_vencimento
+    if (!d) return false
+    const dt = new Date(d)
+    return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual && (p.status === 'paga')
+  }).reduce((s, p) => s + (p.valor || 0), 0)
+
+  // Parcelas atrasadas
+  const parcelasAtrasadas = dados.parcelas.filter(p => {
+    if (p.status === 'paga' || p.status === 'cancelada') return false
+    const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00') : null
+    return venc && venc < hoje
+  })
   const totalPlacas      = dados.placas.length
   // Ocupacao calculada pelos contratos ativos de hoje (nao depende do status da placa)
   const placasComContratoAtivo = new Set(
@@ -286,6 +307,10 @@ export default function Dashboard({ setPage = () => {} }) {
   })()
   const fatPeriodo = mesesPeriodo.reduce((s, m) => s + m.valor, 0)
 
+  const vencendo5 = contratosAtivos
+    .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 5 })
+    .sort((a, b) => diasRestantes(a.data_fim) - diasRestantes(b.data_fim))
+
   const vencendo30 = contratosAtivos
     .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 30 })
     .sort((a, b) => diasRestantes(a.data_fim) - diasRestantes(b.data_fim))
@@ -297,6 +322,48 @@ export default function Dashboard({ setPage = () => {} }) {
     if (c.status === 'ativo' && d !== null && d <= 30) return 'vencendo'
     return c.status
   }
+
+  // Banner de alerta vencendo ≤5 dias
+  const BannerVencendo = vencendo5.length > 0 ? (
+    <div style={{
+      background: '#FFF7ED', border: '1.5px solid #F97316', borderRadius: 12,
+      padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14,
+    }}>
+      <span style={{ fontSize: 22 }}>⚠️</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#9A3412' }}>
+          {vencendo5.length} contrato{vencendo5.length > 1 ? 's' : ''} vencendo em ≤5 dias!
+        </div>
+        <div style={{ fontSize: 13, color: '#C2410C', marginTop: 2 }}>
+          {vencendo5.map(c => `${c.clientes?.nome || '-'} (${diasRestantes(c.data_fim)}d)`).join(' · ')}
+        </div>
+      </div>
+      <button onClick={() => navigate('contratos')} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#F97316', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+        Ver contratos
+      </button>
+    </div>
+  ) : null
+
+  // Banner parcelas atrasadas
+  const BannerParcelas = parcelasAtrasadas.length > 0 ? (
+    <div style={{
+      background: '#FFF1F2', border: '1.5px solid #F43F5E', borderRadius: 12,
+      padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14,
+    }}>
+      <span style={{ fontSize: 22 }}>💸</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#9F1239' }}>
+          {parcelasAtrasadas.length} parcela{parcelasAtrasadas.length > 1 ? 's' : ''} em atraso
+        </div>
+        <div style={{ fontSize: 13, color: '#BE123C', marginTop: 2 }}>
+          Total em aberto: {formatBRL(parcelasAtrasadas.reduce((s, p) => s + (p.valor || 0), 0))}
+        </div>
+      </div>
+      <button onClick={() => navigate('parcelas')} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#F43F5E', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+        Ver parcelas
+      </button>
+    </div>
+  ) : null
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 320, flexDirection: 'column', gap: 12 }}>
@@ -332,9 +399,12 @@ export default function Dashboard({ setPage = () => {} }) {
         </div>
       </div>
 
+      {BannerVencendo}
+      {BannerParcelas}
+
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
         <KpiCard icon={<IcoContract />} label="Contratos Ativos" value={contratosAtivos.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> em relacao ao mes passado</>} />
-        <KpiCard icon={<IcoDollar />}   label="Faturamento Ativo" value={formatBRL(faturamentoAtivo)} sub="receita mensal recorrente" />
+        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes)} sub={<>parcelas pagas em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}</>} />
         <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue />
         <KpiCard icon={<IcoBoard />}    label="Placas Disponiveis" value={<>{placasDisp} <span style={{ fontSize: 15, fontWeight: 600, color: C.textLight }}>de {totalPlacas}</span></>} bar={pctDisp} />
         <KpiCard icon={<IcoUsers />}    label="Clientes Cadastrados" value={dados.clientes.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> novos este mes</>} />
@@ -386,7 +456,7 @@ export default function Dashboard({ setPage = () => {} }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: C.warnSoft, color: C.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IcoAlert /></span>
             <div style={{ flexGrow: 1 }}>
-              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>Vencendo em 30 dias</h2>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>Vencendo em breve</h2>
               <span style={{ fontSize: 12, color: C.textLight }}>{formatBRL(vencendo30.reduce((s,c) => s+(c.valor_total||0),0))}/mes em renovacao</span>
             </div>
             <span style={{ minWidth: 28, height: 28, padding: '0 8px', boxSizing: 'border-box', borderRadius: 999, background: C.danger, color: '#fff', fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{vencendo30.length}</span>

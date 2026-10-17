@@ -11,6 +11,8 @@ import Relatorios from './pages/Relatorios'
 import ContasPagar from './pages/ContasPagar'
 import Vendedores from './pages/Vendedores'
 import Disponibilidade from './pages/Disponibilidade'
+import Parcelas from './pages/Parcelas'
+import OcupacaoPlacas from './pages/OcupacaoPlacas'
 
 export const AuthContext = createContext(null)
 export const useAuth = () => useContext(AuthContext)
@@ -25,6 +27,8 @@ const PAGES = {
   contaspagar:     ContasPagar,
   vendedores:      Vendedores,
   disponibilidade: Disponibilidade,
+  parcelas:        Parcelas,
+  ocupacao:        OcupacaoPlacas,
 }
 
 const NAV = [
@@ -101,7 +105,7 @@ function NavItem({ n, active, onClick, badge }) {
   )
 }
 
-function SidebarContent({ page, setPage, user, onLogout, alertasContas, onNavClick }) {
+function SidebarContent({ page, setPage, user, onLogout, alertasContas, alertasParcelas, onNavClick }) {
   return (
     <>
       {/* Logo */}
@@ -128,7 +132,7 @@ function SidebarContent({ page, setPage, user, onLogout, alertasContas, onNavCli
             n={n}
             active={page === n.id}
             onClick={() => { setPage(n.id); onNavClick && onNavClick() }}
-            badge={n.id === 'contaspagar' ? alertasContas : 0}
+            badge={n.id === 'contaspagar' ? alertasContas : n.id === 'parcelas' ? alertasParcelas : 0}
           />
         ))}
       </nav>
@@ -267,6 +271,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState('dashboard')
   const [alertasContas, setAlertasContas] = useState(0)
+  const [alertasParcelas, setAlertasParcelas] = useState(0)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isMobile = useIsMobile()
 
@@ -293,6 +298,21 @@ export default function App() {
         return d !== null && d <= 1
       }).length
       setAlertasContas(count)
+
+      // Parcelas atrasadas
+      const { data: pData } = await supabase
+        .from('parcelas')
+        .select('data_vencimento, status')
+        .neq('status', 'paga')
+        .neq('status', 'cancelada')
+      if (pData) {
+        const hoje = new Date(); hoje.setHours(0,0,0,0)
+        const atrasadas = pData.filter(p => {
+          const v = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00') : null
+          return v && v < hoje
+        }).length
+        setAlertasParcelas(atrasadas)
+      }
     }
     if (session) {
       checarAlertas()
@@ -336,6 +356,7 @@ export default function App() {
     user: session.user,
     onLogout: () => supabase.auth.signOut(),
     alertasContas,
+    alertasParcelas,
   }
 
   return (
