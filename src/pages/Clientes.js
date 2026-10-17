@@ -262,52 +262,76 @@ export function Comissoes() {
 // RELATÓRIOS
 export function Relatorios() {
   const [contratos, setContratos] = useState([])
+  const [parcelas, setParcelas] = useState([])
   const [comissoes, setComissoes] = useState([])
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState('6m')
 
   useEffect(() => {
     async function carregar() {
-      const [co, cm] = await Promise.all([
+      const [co, pa, cm] = await Promise.all([
         supabase.from('contratos').select('*, placas(nome), clientes(nome)').order('data_inicio', { ascending: false }),
+        supabase.from('parcelas').select('*').eq('status', 'paga'),
         supabase.from('comissoes').select('*'),
       ])
       setContratos(co.data || [])
+      setParcelas(pa.data || [])
       setComissoes(cm.data || [])
       setLoading(false)
     }
     carregar()
   }, [])
 
-  const filtrar = (lista) => {
+  // Parcelas pagas cujo pagamento caiu dentro do período selecionado
+  const parcelasDoPeriodo = (() => {
     const meses = periodo === '1m' ? 1 : periodo === '3m' ? 3 : periodo === '6m' ? 6 : 12
     const corte = new Date(); corte.setMonth(corte.getMonth() - meses)
-    return lista.filter(c => new Date(c.data_inicio || c.created_at) >= corte)
+    return parcelas.filter(p => {
+      const dataRef = p.data_pagamento || p.data_vencimento
+      if (!dataRef) return false
+      return new Date(dataRef + 'T00:00:00') >= corte
+    })
+  })()
+
+  // Contratos que tiveram pelo menos uma parcela paga no período
+  const contratoIdsNoPeriodo = new Set(parcelasDoPeriodo.map(p => p.contrato_id))
+  const contratosNoPeriodo = contratos.filter(c => contratoIdsNoPeriodo.has(c.id))
+
+  const filtrarComissoes = (lista) => {
+    const meses = periodo === '1m' ? 1 : periodo === '3m' ? 3 : periodo === '6m' ? 6 : 12
+    const corte = new Date(); corte.setMonth(corte.getMonth() - meses)
+    return lista.filter(c => new Date(c.created_at || c.data_pagamento) >= corte)
   }
+  const comsFiltradas = filtrarComissoes(comissoes)
 
-  const contsFiltrados = filtrar(contratos)
-  const comsFiltradas = filtrar(comissoes)
+  // Faturamento = soma das parcelas pagas no período
+  const faturamento = parcelasDoPeriodo.reduce((s, p) => s + (Number(p.valor) || 0), 0)
 
-  const faturamento = contsFiltrados.reduce((s, c) => s + (c.valor_total || 0), 0)
-  const custos = contsFiltrados.reduce((s, c) => s + (c.custo_colador || 0) + (c.custo_impressao || 0) + (c.custo_terreno_proporcional || 0) + (c.custo_extra || 0) + (c.valor_imposto || 0), 0)
+  // Custos = dos contratos com parcelas pagas no período
+  const custos = contratosNoPeriodo.reduce((s, c) => s + (c.custo_colador || 0) + (c.custo_impressao || 0) + (c.custo_terreno_proporcional || 0) + (c.custo_extra || 0) + (c.valor_imposto || 0), 0)
   const lucro = faturamento - custos
   const comissaoTotal = comsFiltradas.filter(c => c.status_pagamento === 'pago').reduce((s, c) => s + (c.valor_comissao || 0), 0)
 
-  // Por placa
+  // Mapa contrato_id → contrato (para lookup rápido)
+  const contratoMap = Object.fromEntries(contratos.map(c => [c.id, c]))
+
+  // Ranking por placa — somando parcelas pagas no período
   const porPlaca = {}
-  contsFiltrados.forEach(c => {
-    const nome = c.placas?.nome || 'Sem placa'
+  parcelasDoPeriodo.forEach(p => {
+    const cont = contratoMap[p.contrato_id]
+    const nome = cont?.placas?.nome || 'Sem placa'
     if (!porPlaca[nome]) porPlaca[nome] = 0
-    porPlaca[nome] += c.valor_total || 0
+    porPlaca[nome] += Number(p.valor) || 0
   })
   const rankingPlacas = Object.entries(porPlaca).sort((a, b) => b[1] - a[1])
 
-  // Por cliente
+  // Ranking por cliente — somando parcelas pagas no período
   const porCliente = {}
-  contsFiltrados.forEach(c => {
-    const nome = c.clientes?.nome || 'Sem cliente'
+  parcelasDoPeriodo.forEach(p => {
+    const cont = contratoMap[p.contrato_id]
+    const nome = cont?.clientes?.nome || 'Sem cliente'
     if (!porCliente[nome]) porCliente[nome] = { total: 0, qtd: 0 }
-    porCliente[nome].total += c.valor_total || 0
+    porCliente[nome].total += Number(p.valor) || 0
     porCliente[nome].qtd++
   })
   const rankingClientes = Object.entries(porCliente).sort((a, b) => b[1].total - a[1].total)
