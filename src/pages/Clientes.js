@@ -377,7 +377,7 @@ export function Relatorios() {
         </div>
         <div style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', border: '1px solid #eee' }}>
           <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase' }}>Contratos no período</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a18' }}>{contsFiltrados.length}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a18' }}>{contratosNoPeriodo.length}</div>
         </div>
       </div>
 
