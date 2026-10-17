@@ -67,7 +67,7 @@ function calcStatus(dataInicio, dataFim, statusManual) {
   if (inicio > hoje) return 'reservado'
   if (fim < hoje) return 'expirado'
   const diasRestam = Math.round((fim - hoje) / 86400000)
-  if (diasRestam <= 30) return 'vencendo'
+  if (diasRestam <= 5) return 'vencendo'
   return 'ativo'
 }
 
@@ -315,7 +315,9 @@ export default function Contratos() {
 
   const contFiltrados = filtro === 'todos'
     ? contratosEnriquecidos
-    : contratosEnriquecidos.filter(c => c.status_calc === filtro)
+    : filtro === 'encerrado'
+      ? contratosEnriquecidos.filter(c => c.status_calc === 'encerrado' || c.status_calc === 'expirado')
+      : contratosEnriquecidos.filter(c => c.status_calc === filtro)
 
   const valorTotal = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
   const custoTotal = Number(form.custo_colador) + Number(form.custo_impressao) + Number(form.custo_terreno_proporcional) + Number(form.custo_extra) + Number(form.valor_imposto)
