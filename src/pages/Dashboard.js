@@ -272,6 +272,25 @@ export default function Dashboard({ setPage = () => {} }) {
     return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
   }).reduce((s, p) => s + (p.valor || 0), 0)
 
+  // Receita líquida do mês: receita bruta menos custos proporcionais dos contratos com parcelas pagas no mês
+  const custosDoMes = (() => {
+    // Pega IDs únicos dos contratos que tiveram parcelas pagas este mês
+    const contratoIdsComPagamento = new Set(
+      dados.parcelas.filter(p => {
+        if (p.status !== 'paga') return false
+        const d = p.data_pagamento || p.data_vencimento
+        if (!d) return false
+        const dt = new Date(d + 'T00:00:00')
+        return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
+      }).map(p => p.contrato_id)
+    )
+    // Soma os custos desses contratos
+    return dados.contratos
+      .filter(c => contratoIdsComPagamento.has(c.id))
+      .reduce((s, c) => s + (Number(c.custo_colador) || 0) + (Number(c.custo_impressao) || 0) + (Number(c.custo_terreno_proporcional) || 0) + (Number(c.custo_extra) || 0) + (Number(c.valor_imposto) || 0), 0)
+  })()
+  const receitaLiquida = receitaMes - custosDoMes
+
   // Parcelas atrasadas
   const parcelasAtrasadas = dados.parcelas.filter(p => {
     if (p.status === 'paga' || p.status === 'cancelada') return false
@@ -416,7 +435,7 @@ export default function Dashboard({ setPage = () => {} }) {
         <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes)} sub={<>parcelas pagas em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}</>} />
         <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue />
         <KpiCard icon={<IcoBoard />}    label="Placas Disponiveis" value={<>{placasDisp} <span style={{ fontSize: 15, fontWeight: 600, color: C.textLight }}>de {totalPlacas}</span></>} bar={pctDisp} />
-        <KpiCard icon={<IcoUsers />}    label="Clientes Cadastrados" value={dados.clientes.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> novos este mes</>} />
+        <KpiCard icon={<IcoDollar />}   label="Receita Líquida" value={formatBRL(receitaLiquida)} sub={<span style={{ color: C.textLight }}>receita bruta − custos do mês</span>} highlight={receitaLiquida > 0} />
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20 }}>
