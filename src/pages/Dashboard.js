@@ -319,7 +319,7 @@ export default function Dashboard({ setPage = () => {} }) {
     .sort((a, b) => diasRestantes(a.data_fim) - diasRestantes(b.data_fim))
 
   const vencendo30 = contratosAtivos
-    .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 30 })
+    .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 7 })
     .sort((a, b) => diasRestantes(a.data_fim) - diasRestantes(b.data_fim))
 
   const recentes = dados.contratos.slice(0, 7)
@@ -470,7 +470,7 @@ export default function Dashboard({ setPage = () => {} }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {vencendo30.length === 0 && (
-              <div style={{ fontSize: 13, color: C.textLight, textAlign: 'center', padding: '20px 0' }}>Nenhum contrato vencendo em 30 dias</div>
+              <div style={{ fontSize: 13, color: C.textLight, textAlign: 'center', padding: '20px 0' }}>Nenhum contrato vencendo em 7 dias</div>
             )}
             {vencendo30.slice(0, 4).map(c => {
               const d = diasRestantes(c.data_fim)
