@@ -16,6 +16,7 @@ const FORM_VAZIO = {
   emite_nota: false,
   forma_pagamento: 'pix',
   forma_parcelamento: 'avista',
+  num_parcelas: 2,
   status_pagamento: 'aguardando', data_pagamento: '', observacoes_pagamento: '',
   historico: false, status: 'ativo', observacoes: ''
 }
@@ -30,11 +31,8 @@ const DURACOES = [
 ]
 
 const FORMAS_PARCELAMENTO = [
-  { value: 'avista', label: 'À vista' },
-  { value: 'mensal', label: 'Mensal' },
-  { value: 'bimestral', label: 'Bimestral' },
-  { value: 'trimestral', label: 'Trimestral' },
-  { value: 'semestral', label: 'Semestral' },
+  { value: 'avista',    label: 'À vista' },
+  { value: 'parcelado', label: 'Parcelado' },
 ]
 
 const STATUS_DINAMICO = {
@@ -72,40 +70,28 @@ function calcStatus(dataInicio, dataFim, statusManual) {
   return 'ativo'
 }
 
-// Calcula número de parcelas baseado nas datas do contrato
-function calcNumParcelas(dataInicio, dataFim, formaParcelamento) {
-  if (!dataInicio || !dataFim || formaParcelamento === 'avista') return 1
-  const intervalos = { mensal: 1, bimestral: 2, trimestral: 3, semestral: 6 }
-  const meses = intervalos[formaParcelamento] || 1
-  const inicio = new Date(dataInicio + 'T00:00:00')
-  const fim = new Date(dataFim + 'T23:59:59')
-  const diffMeses = (fim.getFullYear() - inicio.getFullYear()) * 12 + (fim.getMonth() - inicio.getMonth())
-  return Math.max(1, Math.ceil(diffMeses / meses))
-}
-
-// Gera lista de parcelas com valores e datas
-function gerarParcelasContrato(valorTotal, formaParcelamento, dataInicio, dataFim) {
-  if (!valorTotal || !dataInicio) {
-    return [{ numero: 1, valor: valorTotal || 0, data_vencimento: dataInicio || '', status: 'pendente' }]
-  }
-  if (formaParcelamento === 'avista') {
-    return [{ numero: 1, valor: Number(valorTotal) || 0, data_vencimento: dataInicio || '', status: 'pendente' }]
-  }
-  const numParcelas = calcNumParcelas(dataInicio, dataFim, formaParcelamento)
-  const intervalos = { mensal: 1, bimestral: 2, trimestral: 3, semestral: 6 }
-  const meses = intervalos[formaParcelamento] || 1
+// Gera lista de parcelas mensais com base na quantidade informada
+function gerarParcelasContrato(valorTotal, numParcelas, dataInicio) {
+  const n = Math.max(1, parseInt(numParcelas) || 1)
   const vt = Number(valorTotal) || 0
-  const valorParcela = parseFloat((vt / numParcelas).toFixed(2))
-  const diferenca = parseFloat((vt - valorParcela * numParcelas).toFixed(2))
-
-  const parcelas = []
-  for (let i = 0; i < numParcelas; i++) {
-    const d = new Date(dataInicio + 'T00:00:00')
-    d.setMonth(d.getMonth() + i * meses)
-    const valor = i === numParcelas - 1 ? parseFloat((valorParcela + diferenca).toFixed(2)) : valorParcela
-    parcelas.push({ numero: i + 1, valor, data_vencimento: d.toISOString().split('T')[0], status: 'pendente' })
+  if (!vt || !dataInicio) {
+    return Array.from({ length: n }, (_, i) => ({
+      numero: i + 1, valor: i === n - 1 ? vt : parseFloat((vt / n).toFixed(2)),
+      data_vencimento: dataInicio || '', status: 'pendente'
+    }))
   }
-  return parcelas
+  const valorParcela = parseFloat((vt / n).toFixed(2))
+  const diferenca = parseFloat((vt - valorParcela * n).toFixed(2))
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(dataInicio + 'T00:00:00')
+    d.setMonth(d.getMonth() + i)
+    return {
+      numero: i + 1,
+      valor: i === n - 1 ? parseFloat((valorParcela + diferenca).toFixed(2)) : valorParcela,
+      data_vencimento: d.toISOString().split('T')[0],
+      status: 'pendente'
+    }
+  })
 }
 
 export default function Contratos() {
@@ -149,14 +135,13 @@ export default function Contratos() {
     return novo
   })
 
-  // Recalcula parcelas quando mudam campos relevantes
+  // Recalcula parcelas quando mudam campos relevantes (só para modo parcelado)
   useEffect(() => {
     if (!modal) return
+    if (form.forma_parcelamento !== 'parcelado') return
     const vt = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
-    if (vt > 0 && form.data_inicio) {
-      setParcelas(gerarParcelasContrato(vt, form.forma_parcelamento, form.data_inicio, form.data_fim))
-    }
-  }, [form.valor_veiculacao, form.valor_arte, form.valor_impressao, form.forma_parcelamento, form.data_inicio, form.data_fim, modal])
+    setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
+  }, [form.valor_veiculacao, form.valor_arte, form.valor_impressao, form.forma_parcelamento, form.num_parcelas, form.data_inicio, modal])
 
   const atualizarParcela = (idx, campo, valor) => {
     setParcelas(prev => {
@@ -189,14 +174,19 @@ export default function Contratos() {
   const abrir = async (c = null) => {
     if (c) {
       const placa_ids = (c.contrato_placas || []).map(cp => cp.placa_id)
-      setForm({ ...FORM_VAZIO, ...c, placa_ids, forma_parcelamento: c.forma_parcelamento || 'avista' })
-      // Carregar parcelas existentes
-      const { data: parcsExist } = await supabase.from('parcelas').select('*').eq('contrato_id', c.id).order('numero')
-      if (parcsExist && parcsExist.length > 0) {
-        setParcelas(parcsExist)
+      const formaParc = c.forma_parcelamento === 'parcelado' ? 'parcelado' : 'avista'
+      setForm({ ...FORM_VAZIO, ...c, placa_ids, forma_parcelamento: formaParc, num_parcelas: c.num_parcelas || 2 })
+      // Carregar parcelas existentes (só relevante para parcelado)
+      if (formaParc === 'parcelado') {
+        const { data: parcsExist } = await supabase.from('parcelas').select('*').eq('contrato_id', c.id).order('numero')
+        if (parcsExist && parcsExist.length > 0) {
+          setParcelas(parcsExist)
+        } else {
+          const vt = c.valor_total || 0
+          setParcelas(gerarParcelasContrato(vt, c.num_parcelas || 2, c.data_inicio))
+        }
       } else {
-        const vt = c.valor_total || 0
-        setParcelas(gerarParcelasContrato(vt, c.forma_parcelamento || 'avista', c.data_inicio, c.data_fim))
+        setParcelas([])
       }
     } else {
       setForm(FORM_VAZIO)
@@ -263,8 +253,9 @@ export default function Contratos() {
       emite_nota: form.emite_nota,
       forma_pagamento: form.forma_pagamento,
       forma_parcelamento: form.forma_parcelamento,
+      num_parcelas: form.forma_parcelamento === 'parcelado' ? (form.num_parcelas || 2) : null,
       status_pagamento: form.status_pagamento,
-      data_pagamento: form.data_pagamento || null,
+      data_pagamento: form.forma_parcelamento === 'avista' ? (form.data_pagamento || null) : null,
       observacoes_pagamento: form.observacoes_pagamento,
       historico: form.historico,
       status: statusCalc,
@@ -300,8 +291,8 @@ export default function Contratos() {
       })
       await supabase.from('contrato_placas').insert(placasRel)
 
-      // Parcelas
-      const parcelasValidas = parcelas.filter(p => p.data_vencimento)
+      // Parcelas — só salva quando parcelado
+      const parcelasValidas = form.forma_parcelamento === 'parcelado' ? parcelas.filter(p => p.data_vencimento) : []
       if (parcelasValidas.length > 0) {
         const parcelasPayload = parcelasValidas.map(p => ({
           contrato_id,
@@ -618,14 +609,19 @@ export default function Contratos() {
                 { value: 'transferencia', label: 'Transferência' },
                 { value: 'boleto', label: 'Boleto' },
               ]} />
-              <Select label="Condição / Parcelamento" value={form.forma_parcelamento} onChange={v => set('forma_parcelamento', v)} options={FORMAS_PARCELAMENTO} />
+              <Select label="Condição / Parcelamento" value={form.forma_parcelamento} onChange={v => { set('forma_parcelamento', v); if (v !== 'parcelado') setParcelas([]) }} options={FORMAS_PARCELAMENTO} />
+              {form.forma_parcelamento === 'parcelado' && (
+                <Input label="Nº de parcelas" value={form.num_parcelas || 2} onChange={v => set('num_parcelas', Math.max(2, parseInt(v) || 2))} type="number" />
+              )}
               <Select label="Status pagamento geral" value={form.status_pagamento} onChange={v => set('status_pagamento', v)} options={[
                 { value: 'aguardando', label: 'Aguardando' },
                 { value: 'pago', label: 'Pago' },
                 { value: 'parcial', label: 'Pago parcialmente' },
                 { value: 'atrasado', label: 'Em atraso' },
               ]} />
-              <Input label="Data de pagamento (à vista)" value={form.data_pagamento || ''} onChange={v => set('data_pagamento', v)} type="date" />
+              {form.forma_parcelamento === 'avista' && (
+                <Input label="Data de pagamento (à vista)" value={form.data_pagamento || ''} onChange={v => set('data_pagamento', v)} type="date" />
+              )}
             </div>
             <div style={{ marginTop: 8 }}>
               <label style={{ fontSize: 12, fontWeight: 500, color: '#555', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -634,8 +630,8 @@ export default function Contratos() {
               </label>
             </div>
 
-            {/* Parcelas */}
-            {parcelas.length > 0 && (
+            {/* Parcelas — só exibe quando modo parcelado */}
+            {form.forma_parcelamento === 'parcelado' && parcelas.length > 0 && (
               <div style={{ marginTop: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 8 }}>
                   PARCELAS — {parcelas.length}x · total {formatBRL(parcelas.reduce((s, p) => s + (Number(p.valor) || 0), 0))}
