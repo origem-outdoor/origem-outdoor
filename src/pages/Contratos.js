@@ -4,6 +4,7 @@ import { PageHeader, Badge, Btn, Input, Select, Modal, formatBRL, formatDate, di
 
 const FORM_VAZIO = {
   placa_ids: [],
+  placa_datas: {},
   cliente_id: '',
   vendedor_id: '',
   data_inicio: '', data_fim: '', duracao_tipo: '3m',
@@ -165,6 +166,19 @@ export default function Contratos() {
     })
   }
 
+  const [placaDatas, setPlacaDatas] = useState({})
+
+  const updatePlacaData = (placa_id, campo, valor) => {
+    setPlacaDatas(prev => {
+      const atual = prev[placa_id] || { data_inicio: '', data_fim: '' }
+      const atualizado = { ...atual, [campo]: valor }
+      if (campo === 'data_inicio' && valor && form.duracao_tipo !== 'custom') {
+        atualizado.data_fim = calcDataFim(valor, form.duracao_tipo)
+      }
+      return { ...prev, [placa_id]: atualizado }
+    })
+  }
+
   const togglePlaca = (id) => {
     setForm(f => {
       const ids = f.placa_ids.includes(id) ? f.placa_ids.filter(i => i !== id) : [...f.placa_ids, id]
@@ -188,6 +202,15 @@ export default function Contratos() {
       setForm(FORM_VAZIO)
       setParcelas([{ numero: 1, valor: 0, data_vencimento: '', status: 'pendente' }])
     }
+    setPlacaDatas(c
+      ? Object.fromEntries((c.contrato_placas || []).map(cp => [
+          cp.placa_id, {
+            data_inicio: cp.data_inicio || c.data_inicio || '',
+            data_fim: cp.data_fim || c.data_fim || ''
+          }
+        ]))
+      : {}
+    )
     setNovoCliente({ nome: '', telefone: '' })
     setCriandoCliente(false)
     setModal(c ? 'editar' : 'novo')
@@ -215,13 +238,16 @@ export default function Contratos() {
     const qtd = form.placa_ids.length
     const valorTotal = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
     const valorPorPlaca = qtd > 0 ? valorTotal / qtd : 0
-    const statusCalc = calcStatus(form.data_inicio, form.data_fim, form.status)
+    const todasDatas = form.placa_ids.map(id => placaDatas[id] || {})
+    const dataInicioContrato = todasDatas.map(d => d.data_inicio).filter(Boolean).sort()[0] || form.data_inicio
+    const dataFimContrato = todasDatas.map(d => d.data_fim).filter(Boolean).sort().reverse()[0] || form.data_fim
+    const statusCalc = calcStatus(dataInicioContrato, dataFimContrato, form.status)
 
     const payload = {
       cliente_id: form.cliente_id || null,
       vendedor_id: form.vendedor_id || null,
-      data_inicio: form.data_inicio,
-      data_fim: form.data_fim,
+      data_inicio: dataInicioContrato,
+      data_fim: dataFimContrato,
       duracao_tipo: form.duracao_tipo,
       modalidade: form.modalidade,
       valor_veiculacao: Number(form.valor_veiculacao),
@@ -264,9 +290,14 @@ export default function Contratos() {
 
     if (contrato_id) {
       // Placas
-      const placasRel = form.placa_ids.map(placa_id => ({
-        contrato_id, placa_id, face: 'AB', valor_por_placa: valorPorPlaca
-      }))
+      const placasRel = form.placa_ids.map(placa_id => {
+        const datas = placaDatas[placa_id] || {}
+        return {
+          contrato_id, placa_id, face: 'AB', valor_por_placa: valorPorPlaca,
+          data_inicio: datas.data_inicio || dataInicioContrato || null,
+          data_fim: datas.data_fim || dataFimContrato || null,
+        }
+      })
       await supabase.from('contrato_placas').insert(placasRel)
 
       // Parcelas
@@ -459,6 +490,46 @@ export default function Contratos() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+            {/* Datas individuais por placa */}
+            {form.placa_ids.length > 0 && (
+              <div style={{ background: '#EFF6FF', borderRadius: 10, padding: 14, marginBottom: 14, border: '1px solid #BFDBFE', gridColumn: '1 / -1' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#1D4ED8', marginBottom: 10 }}>
+                  📅 CHECK-IN / CHECK-OUT POR PLACA
+                  <span style={{ fontSize: 11, fontWeight: 400, color: '#3B82F6', marginLeft: 8 }}>
+                    — cada placa com data independente
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {form.placa_ids.map(pid => {
+                    const placa = placas.find(p => p.id === pid)
+                    const datas = placaDatas[pid] || { data_inicio: '', data_fim: '' }
+                    return (
+                      <div key={pid} style={{
+                        display: 'grid', gridTemplateColumns: '1fr 150px 150px', gap: 10, alignItems: 'center',
+                        background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid #DBEAFE'
+                      }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a18' }}>
+                          🪧 {placa?.nome || pid}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#3B82F6', fontWeight: 600, marginBottom: 3 }}>Check-in</div>
+                          <input type="date" value={datas.data_inicio || ''} onChange={e => updatePlacaData(pid, 'data_inicio', e.target.value)}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1.5px solid #93C5FD', fontSize: 12, boxSizing: 'border-box' }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#6B7280', fontWeight: 600, marginBottom: 3 }}>Check-out</div>
+                          <input type="date" value={datas.data_fim || ''} onChange={e => updatePlacaData(pid, 'data_fim', e.target.value)}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 12, boxSizing: 'border-box' }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: '#3B82F6', marginTop: 8 }}>
+                  💡 Selecione a duração abaixo para calcular o check-out automaticamente ao preencher o check-in.
+                </div>
+              </div>
+            )}
             {/* Cliente */}
             <div style={{ gridColumn: '1/-1', marginBottom: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
