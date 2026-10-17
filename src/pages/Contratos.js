@@ -66,7 +66,7 @@ function calcStatus(dataInicio, dataFim, statusManual) {
   if (inicio > hoje) return 'reservado'
   if (fim < hoje) return 'expirado'
   const diasRestam = Math.round((fim - hoje) / 86400000)
-  if (diasRestam <= 5) return 'vencendo'
+  if (diasRestam <= 7) return 'vencendo'
   return 'ativo'
 }
 

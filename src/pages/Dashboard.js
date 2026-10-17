@@ -315,7 +315,7 @@ export default function Dashboard({ setPage = () => {} }) {
   const fatPeriodo = mesesPeriodo.reduce((s, m) => s + m.valor, 0)
 
   const vencendo5 = contratosAtivos
-    .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 5 })
+    .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 7 })
     .sort((a, b) => diasRestantes(a.data_fim) - diasRestantes(b.data_fim))
 
   const vencendo30 = contratosAtivos
@@ -326,11 +326,11 @@ export default function Dashboard({ setPage = () => {} }) {
 
   const statusExibicao = (c) => {
     const d = diasRestantes(c.data_fim)
-    if (c.status === 'ativo' && d !== null && d <= 30) return 'vencendo'
+    if (c.status === 'ativo' && d !== null && d <= 7) return 'vencendo'
     return c.status
   }
 
-  // Banner de alerta vencendo ≤5 dias
+  // Banner de alerta vencendo ≤7 dias
   const BannerVencendo = vencendo5.length > 0 ? (
     <div style={{
       background: '#FFF7ED', border: '1.5px solid #F97316', borderRadius: 12,
@@ -339,7 +339,7 @@ export default function Dashboard({ setPage = () => {} }) {
       <span style={{ fontSize: 22 }}>⚠️</span>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: '#9A3412' }}>
-          {vencendo5.length} contrato{vencendo5.length > 1 ? 's' : ''} vencendo em ≤5 dias!
+          {vencendo5.length} contrato{vencendo5.length > 1 ? 's' : ''} vencendo em ≤7 dias!
         </div>
         <div style={{ fontSize: 13, color: '#C2410C', marginTop: 2 }}>
           {vencendo5.map(c => `${c.clientes?.nome || '-'} (${diasRestantes(c.data_fim)}d)`).join(' · ')}
