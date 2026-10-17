@@ -325,7 +325,9 @@ export default function Dashboard({ setPage = () => {} }) {
   const recentes = dados.contratos.slice(0, 7)
 
   const statusExibicao = (c) => {
+    if (['encerrado','renovado','cancelado'].includes(c.status)) return c.status
     const d = diasRestantes(c.data_fim)
+    if (d !== null && d < 0) return 'expirado'
     if (c.status === 'ativo' && d !== null && d <= 7) return 'vencendo'
     return c.status
   }
