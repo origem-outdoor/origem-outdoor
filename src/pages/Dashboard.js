@@ -265,7 +265,7 @@ export default function Dashboard({ setPage = () => {} }) {
   const mesAtual = hoje.getMonth(), anoAtual = hoje.getFullYear()
 
   const receitaMes = dados.parcelas.filter(p => {
-    if (p.status !== 'paga') return false
+    if (!['paga','pago'].includes(p.status)) return false
     const d = p.data_pagamento || p.data_vencimento
     if (!d) return false
     const dt = new Date(d + 'T00:00:00')
@@ -277,7 +277,7 @@ export default function Dashboard({ setPage = () => {} }) {
     // Pega IDs únicos dos contratos que tiveram parcelas pagas este mês
     const contratoIdsComPagamento = new Set(
       dados.parcelas.filter(p => {
-        if (p.status !== 'paga') return false
+        if (!['paga','pago'].includes(p.status)) return false
         const d = p.data_pagamento || p.data_vencimento
         if (!d) return false
         const dt = new Date(d + 'T00:00:00')
@@ -293,7 +293,7 @@ export default function Dashboard({ setPage = () => {} }) {
 
   // Parcelas atrasadas
   const parcelasAtrasadas = dados.parcelas.filter(p => {
-    if (p.status === 'paga' || p.status === 'cancelada') return false
+    if (['paga','pago'].includes(p.status) || p.status === 'cancelada') return false
     const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00') : null
     return venc && venc < hoje
   })
@@ -322,7 +322,7 @@ export default function Dashboard({ setPage = () => {} }) {
       mapa[k] = { mes: d.getMonth()+1, ano: d.getFullYear(), valor: 0 }
     }
     dados.parcelas.forEach(p => {
-      if (p.status !== 'paga') return
+      if (!['paga','pago'].includes(p.status)) return
       const d = p.data_pagamento || p.data_vencimento
       if (!d) return
       const dt = new Date(d + 'T00:00:00')

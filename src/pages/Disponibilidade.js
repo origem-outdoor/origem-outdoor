@@ -44,7 +44,7 @@ export default function Disponibilidade({ setPage }) {
 
   const carregar = async () => {
     const [pl, co] = await Promise.all([
-      supabase.from('placas').select('id, nome, tipo, localizacao, status').neq('status', 'inativa'),
+      supabase.from('placas').select('id, nome, tipo, localizacao, status').or('status.neq.inativa,status.is.null'),
       supabase.from('contratos')
         .select('id, placa_id, data_inicio, data_fim, clientes(nome), contrato_placas(placa_id)')
         .in('status', ['ativo', 'reservado'])

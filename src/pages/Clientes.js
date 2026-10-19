@@ -271,7 +271,7 @@ export function Relatorios() {
     async function carregar() {
       const [co, pa, cm] = await Promise.all([
         supabase.from('contratos').select('*, placas(nome), clientes(nome)').order('data_inicio', { ascending: false }),
-        supabase.from('parcelas').select('*').eq('status', 'paga'),
+        supabase.from('parcelas').select('*').in('status', ['paga','pago']),
         supabase.from('comissoes').select('*'),
       ])
       setContratos(co.data || [])
