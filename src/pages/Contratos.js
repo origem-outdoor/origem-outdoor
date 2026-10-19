@@ -17,7 +17,7 @@ const FORM_VAZIO = {
   forma_pagamento: 'pix',
   forma_parcelamento: 'avista',
   num_parcelas: 2,
-  status_pagamento: 'aguardando', data_pagamento: '', observacoes_pagamento: '',
+  status_pagamento: 'aguardando', data_pagamento: '', observacoes_pagamento: '', permuta_descricao: '',
   historico: false, status: 'ativo', observacoes: ''
 }
 
@@ -267,6 +267,7 @@ export default function Contratos() {
       status_pagamento: form.status_pagamento,
       data_pagamento: form.forma_parcelamento === 'avista' ? (form.data_pagamento || null) : null,
       observacoes_pagamento: form.observacoes_pagamento,
+      permuta_descricao: form.forma_pagamento === 'permuta' ? (form.permuta_descricao || null) : null,
       historico: form.historico,
       status: statusCalc,
       observacoes: form.observacoes,
@@ -447,6 +448,7 @@ export default function Contratos() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Badge texto={STATUS_PAGAMENTO[c.status_pagamento]?.label || c.status_pagamento} cor={STATUS_PAGAMENTO[c.status_pagamento]?.cor} />
+                  {c.forma_pagamento === 'permuta' && <Badge texto="🔄 Permuta" cor="#7C3AED" />}
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
                     borderRadius: 20, fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
@@ -640,7 +642,12 @@ export default function Contratos() {
                 { value: 'dinheiro', label: 'Dinheiro' },
                 { value: 'transferencia', label: 'Transferência' },
                 { value: 'boleto', label: 'Boleto' },
+                { value: 'permuta', label: '🔄 Permuta' },
               ]} />
+              {form.forma_pagamento === 'permuta' && (
+                <Input label="O que você recebe na permuta" value={form.permuta_descricao || ''} onChange={v => set('permuta_descricao', v)}
+                  style={{ gridColumn: '1 / -1' }} />
+              )}
               <Select label="Condição / Parcelamento" value={form.forma_parcelamento} onChange={v => { set('forma_parcelamento', v); if (v !== 'parcelado') setParcelas([]) }} options={FORMAS_PARCELAMENTO} />
               {form.forma_parcelamento === 'parcelado' && (
                 <Input label="Nº de parcelas" value={form.num_parcelas || 2} onChange={v => set('num_parcelas', Math.max(2, parseInt(v) || 2))} type="number" />

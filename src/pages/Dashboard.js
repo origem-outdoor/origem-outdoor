@@ -264,25 +264,30 @@ export default function Dashboard({ setPage = () => {} }) {
   // Contratos à vista devem gerar 1 parcela marcada como paga para aparecer aqui.
   const mesAtual = hoje.getMonth(), anoAtual = hoje.getFullYear()
 
-  const receitaMes = dados.parcelas.filter(p => {
+  // Mapa contrato_id → forma_pagamento (para separar permuta de dinheiro)
+  const contratoForma = new Map(dados.contratos.map(c => [c.id, c.forma_pagamento]))
+
+  const parcelasPagasMes = dados.parcelas.filter(p => {
     if (!['paga','pago'].includes(p.status)) return false
     const d = p.data_pagamento || p.data_vencimento
     if (!d) return false
     const dt = new Date(d + 'T00:00:00')
     return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
-  }).reduce((s, p) => s + (p.valor || 0), 0)
+  })
 
-  // Custo proporcional: para cada parcela paga neste mês, divide os custos totais do contrato
-  // pelo total de parcelas daquele contrato (ex: 2560 ÷ 6 parcelas = 426,67 por parcela paga)
-  const custosDoMes = (() => {
-    const parcelasPagas = dados.parcelas.filter(p => {
-      if (!['paga','pago'].includes(p.status)) return false
-      const d = p.data_pagamento || p.data_vencimento
-      if (!d) return false
-      const dt = new Date(d + 'T00:00:00')
-      return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
-    })
-    // Mapa contrato_id → { custoTotal, totalParcelas }
+  // Receita em dinheiro (caixa real)
+  const receitaMes = parcelasPagasMes
+    .filter(p => contratoForma.get(p.contrato_id) !== 'permuta')
+    .reduce((s, p) => s + (p.valor || 0), 0)
+
+  // Receita em permuta (troca — não entra no caixa)
+  const receitaPermutaMes = parcelasPagasMes
+    .filter(p => contratoForma.get(p.contrato_id) === 'permuta')
+    .reduce((s, p) => s + (p.valor || 0), 0)
+
+  // Custo proporcional por parcela paga: custoTotal ÷ totalParcelas
+  // Separado: custos de contratos em dinheiro vs em permuta
+  const calcCustosPropParcelas = (parcs) => {
     const contratoInfo = new Map(
       dados.contratos.map(c => {
         const custoTotal = (Number(c.custo_colador) || 0) + (Number(c.custo_impressao) || 0) +
@@ -291,12 +296,18 @@ export default function Dashboard({ setPage = () => {} }) {
         return [c.id, { custoTotal, totalParcelas }]
       })
     )
-    return parcelasPagas.reduce((s, p) => {
+    return parcs.reduce((s, p) => {
       const info = contratoInfo.get(p.contrato_id)
       if (!info) return s
       return s + info.custoTotal / info.totalParcelas
     }, 0)
-  })()
+  }
+
+  const parcelasCaixaMes = parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) !== 'permuta')
+  const parcelasPermutaMes = parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) === 'permuta')
+
+  const custosDoMes = calcCustosPropParcelas(parcelasCaixaMes)         // custos de contratos em dinheiro
+  const custosPermutaMes = calcCustosPropParcelas(parcelasPermutaMes)  // custos de contratos em permuta (colagem + impressão)
   const receitaLiquida = receitaMes - custosDoMes
 
   // Parcelas atrasadas
@@ -444,10 +455,19 @@ export default function Dashboard({ setPage = () => {} }) {
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
         <KpiCard icon={<IcoContract />} label="Contratos Ativos" value={contratosAtivos.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> em relacao ao mes passado</>} />
-        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes)} sub={<>parcelas pagas em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}</>} />
+        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes)}
+          sub={<>
+            parcelas pagas em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}
+            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(receitaPermutaMes)} em permuta</span>}
+          </>} />
         <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue />
         <KpiCard icon={<IcoBoard />}    label="Placas Disponiveis" value={<>{placasDisp} <span style={{ fontSize: 15, fontWeight: 600, color: C.textLight }}>de {totalPlacas}</span></>} bar={pctDisp} />
-        <KpiCard icon={<IcoDollar />}   label="Receita Líquida" value={formatBRL(receitaLiquida)} sub={<span style={{ color: C.textLight }}>receita bruta − custos do mês</span>} highlight={receitaLiquida > 0} />
+        <KpiCard icon={<IcoDollar />}   label="Receita Líquida" value={formatBRL(receitaLiquida)}
+          sub={<>
+            <span style={{ color: C.textLight }}>caixa real − custos proporcionais</span>
+            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>Permuta: {formatBRL(receitaPermutaMes - custosPermutaMes)} líq. ({formatBRL(receitaPermutaMes)} − {formatBRL(custosPermutaMes)} custos)</span>}
+          </>}
+          highlight={receitaLiquida > 0} />
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20 }}>
