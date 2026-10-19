@@ -103,6 +103,7 @@ export default function Contratos() {
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(FORM_VAZIO)
   const [parcelas, setParcelas] = useState([])
+  const parcelasLockRef = React.useRef(false) // true = não regenerar (carregado do banco ou editado manualmente)
   const [salvando, setSalvando] = useState(false)
   const [filtro, setFiltro] = useState('ativo')
   const [novoCliente, setNovoCliente] = useState({ nome: '', telefone: '' })
@@ -139,11 +140,13 @@ export default function Contratos() {
   useEffect(() => {
     if (!modal) return
     if (form.forma_parcelamento !== 'parcelado') return
+    if (parcelasLockRef.current) return // parcelas carregadas do banco ou editadas manualmente — não sobrescrever
     const vt = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
     setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
   }, [form.valor_veiculacao, form.valor_arte, form.valor_impressao, form.forma_parcelamento, form.num_parcelas, form.data_inicio, modal])
 
   const atualizarParcela = (idx, campo, valor) => {
+    parcelasLockRef.current = true // usuário editou manualmente — bloquear regeneração automática
     setParcelas(prev => {
       const novas = [...prev]
       novas[idx] = { ...novas[idx], [campo]: campo === 'valor' ? parseFloat(valor) || 0 : valor }
@@ -177,6 +180,7 @@ export default function Contratos() {
     if (c) {
       const placa_ids = (c.contrato_placas || []).map(cp => cp.placa_id)
       const formaParc = c.forma_parcelamento === 'parcelado' ? 'parcelado' : 'avista'
+      parcelasLockRef.current = true // contrato existente — bloquear regeneração até carregar do banco
       setForm({ ...FORM_VAZIO, ...c, placa_ids, forma_parcelamento: formaParc, num_parcelas: c.num_parcelas || 2 })
       // Carregar parcelas existentes (só relevante para parcelado)
       if (formaParc === 'parcelado') {
@@ -191,6 +195,7 @@ export default function Contratos() {
         setParcelas([])
       }
     } else {
+      parcelasLockRef.current = false // novo contrato — permitir geração automática
       setForm(FORM_VAZIO)
       setParcelas([{ numero: 1, valor: 0, data_vencimento: '', status: 'pendente' }])
     }

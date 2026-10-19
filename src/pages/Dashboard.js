@@ -272,22 +272,30 @@ export default function Dashboard({ setPage = () => {} }) {
     return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
   }).reduce((s, p) => s + (p.valor || 0), 0)
 
-  // Receita líquida do mês: receita bruta menos custos proporcionais dos contratos com parcelas pagas no mês
+  // Custo proporcional: para cada parcela paga neste mês, divide os custos totais do contrato
+  // pelo total de parcelas daquele contrato (ex: 2560 ÷ 6 parcelas = 426,67 por parcela paga)
   const custosDoMes = (() => {
-    // Pega IDs únicos dos contratos que tiveram parcelas pagas este mês
-    const contratoIdsComPagamento = new Set(
-      dados.parcelas.filter(p => {
-        if (!['paga','pago'].includes(p.status)) return false
-        const d = p.data_pagamento || p.data_vencimento
-        if (!d) return false
-        const dt = new Date(d + 'T00:00:00')
-        return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
-      }).map(p => p.contrato_id)
+    const parcelasPagas = dados.parcelas.filter(p => {
+      if (!['paga','pago'].includes(p.status)) return false
+      const d = p.data_pagamento || p.data_vencimento
+      if (!d) return false
+      const dt = new Date(d + 'T00:00:00')
+      return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
+    })
+    // Mapa contrato_id → { custoTotal, totalParcelas }
+    const contratoInfo = new Map(
+      dados.contratos.map(c => {
+        const custoTotal = (Number(c.custo_colador) || 0) + (Number(c.custo_impressao) || 0) +
+          (Number(c.custo_terreno_proporcional) || 0) + (Number(c.custo_extra) || 0) + (Number(c.valor_imposto) || 0)
+        const totalParcelas = dados.parcelas.filter(p => p.contrato_id === c.id).length || 1
+        return [c.id, { custoTotal, totalParcelas }]
+      })
     )
-    // Soma os custos desses contratos
-    return dados.contratos
-      .filter(c => contratoIdsComPagamento.has(c.id))
-      .reduce((s, c) => s + (Number(c.custo_colador) || 0) + (Number(c.custo_impressao) || 0) + (Number(c.custo_terreno_proporcional) || 0) + (Number(c.custo_extra) || 0) + (Number(c.valor_imposto) || 0), 0)
+    return parcelasPagas.reduce((s, p) => {
+      const info = contratoInfo.get(p.contrato_id)
+      if (!info) return s
+      return s + info.custoTotal / info.totalParcelas
+    }, 0)
   })()
   const receitaLiquida = receitaMes - custosDoMes
 
