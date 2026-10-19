@@ -333,8 +333,18 @@ export default function Dashboard({ setPage = () => {} }) {
     })
     .reduce((s, c) => s + (Number(c.custo_colagem)||0) + (Number(c.custo_impressao_troca)||0), 0)
 
-  // Receita líquida inclui comissões recebidas; custos incluem trocas
-  const receitaLiquidaTotal = receitaMes + comissaoDoMes - custosDoMes - custoTrocaDoMes
+  const faturamentoTrocaDoMes = dados.comissoes
+    .filter(c => c.tipo === 'troca_placa')
+    .filter(c => {
+      const d = c.data_inicio
+      if (!d) return false
+      const dt = new Date(d + 'T00:00:00')
+      return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
+    })
+    .reduce((s, c) => s + (Number(c.valor_recebido_troca)||0), 0)
+
+  // Receita líquida inclui comissões recebidas e valor recebido de trocas; custos incluem trocas
+  const receitaLiquidaTotal = receitaMes + comissaoDoMes + faturamentoTrocaDoMes - custosDoMes - custoTrocaDoMes
 
   // Parcelas atrasadas
   const parcelasAtrasadas = dados.parcelas.filter(p => {
@@ -485,6 +495,7 @@ export default function Dashboard({ setPage = () => {} }) {
           sub={<>
             parcelas + comissões em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}
             {comissaoDoMes > 0 && <span style={{ display: 'block', color: '#0A5C42', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(comissaoDoMes)} comissões</span>}
+            {faturamentoTrocaDoMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(faturamentoTrocaDoMes)} trocas</span>}
             {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(receitaPermutaMes)} em permuta</span>}
           </>} />
         <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue />

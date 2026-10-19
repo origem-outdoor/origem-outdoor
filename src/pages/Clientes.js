@@ -138,7 +138,7 @@ export function Clientes() {
 }
 
 // COMISSÕES
-const FORM_COM = { tipo: 'comissao', descricao: '', cliente_id: '', valor_negociado: 0, percentual_comissao: 20, proprietario_placa: '', custo_colagem: 0, custo_impressao_troca: 0, data_inicio: '', data_fim: '', status_pagamento: 'aguardando', data_pagamento: '', observacoes: '' }
+const FORM_COM = { tipo: 'comissao', descricao: '', cliente_id: '', valor_negociado: 0, percentual_comissao: 20, proprietario_placa: '', valor_recebido_troca: 0, custo_colagem: 0, custo_impressao_troca: 0, data_inicio: '', data_fim: '', status_pagamento: 'aguardando', data_pagamento: '', observacoes: '' }
 
 export function Comissoes() {
   const [comissoes, setComissoes] = useState([])
@@ -216,7 +216,7 @@ export function Comissoes() {
                 </div>
                 <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                   {c.tipo === 'troca_placa' ? (
-                    <>Proprietário: {c.proprietario_placa || '-'} · Custo colagem: {formatBRL(c.custo_colagem)} · Impressão: {formatBRL(c.custo_impressao_troca)}{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
+                    <>Proprietário: {c.proprietario_placa || '-'} · Custo colagem: {formatBRL(c.custo_colagem)} · Impressão: {formatBRL(c.custo_impressao_troca)}{Number(c.valor_recebido_troca) > 0 && <> · Recebido: {formatBRL(c.valor_recebido_troca)}</>}{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
                   ) : (
                     <>{c.clientes?.nome && <span>{c.clientes.nome} · </span>}Negociado: {formatBRL(c.valor_negociado)} · {c.percentual_comissao}% = {formatBRL(c.valor_comissao)}{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
                   )}
@@ -226,7 +226,7 @@ export function Comissoes() {
                 {c.tipo !== 'troca_placa' && <Badge texto={c.status_pagamento === 'pago' ? 'Pago' : c.status_pagamento === 'atrasado' ? 'Atrasado' : 'Aguardando'}
                   cor={c.status_pagamento === 'pago' ? 'verde' : c.status_pagamento === 'atrasado' ? 'vermelho' : 'amarelo'} />}
                 {c.tipo === 'troca_placa'
-                  ? <div style={{ fontSize: 16, fontWeight: 700, color: '#c0392b' }}>- {formatBRL((Number(c.custo_colagem)||0)+(Number(c.custo_impressao_troca)||0))}</div>
+                  ? <div style={{ fontSize: 16, fontWeight: 700, color: Number(c.valor_recebido_troca) > 0 ? '#15803d' : '#c0392b' }}>{Number(c.valor_recebido_troca) > 0 ? `+ ${formatBRL(Number(c.valor_recebido_troca) - (Number(c.custo_colagem)||0) - (Number(c.custo_impressao_troca)||0))}` : `- ${formatBRL((Number(c.custo_colagem)||0)+(Number(c.custo_impressao_troca)||0))}`}</div>
                   : <div style={{ fontSize: 16, fontWeight: 700, color: '#0A5C42' }}>{formatBRL(c.valor_comissao)}</div>
                 }
               </div>
@@ -255,8 +255,10 @@ export function Comissoes() {
                 <Input label="Período início" value={form.data_inicio || ''} onChange={v => set('data_inicio', v)} type="date" />
                 <Input label="Período fim" value={form.data_fim || ''} onChange={v => set('data_fim', v)} type="date" />
               </div>
+              <Input label="Valor recebido do cliente (R$)" value={form.valor_recebido_troca || 0} onChange={v => set('valor_recebido_troca', Number(v))} type="number" />
               <div style={{ background: '#FFF1F0', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, fontWeight: 600, color: '#9A0000' }}>
                 Custo total da troca: {formatBRL((Number(form.custo_colagem)||0) + (Number(form.custo_impressao_troca)||0))}
+                {Number(form.valor_recebido_troca) > 0 && <span style={{ color: '#15803d', marginLeft: 16 }}>· Lucro: {formatBRL(Number(form.valor_recebido_troca) - (Number(form.custo_colagem)||0) - (Number(form.custo_impressao_troca)||0))}</span>}
               </div>
             </>
           ) : (
@@ -350,7 +352,8 @@ export function Relatorios() {
   // Faturamento = soma das parcelas pagas no período + comissões recebidas
   const faturamentoParcelas = parcelasDoPeriodo.reduce((s, p) => s + (Number(p.valor) || 0), 0)
   const faturamentoComissoes = comissoesPagas.reduce((s, c) => s + (c.valor_comissao || 0), 0)
-  const faturamento = faturamentoParcelas + faturamentoComissoes
+  const faturamentoTrocas = trocasNoPeriodo.reduce((s, c) => s + (Number(c.valor_recebido_troca) || 0), 0)
+  const faturamento = faturamentoParcelas + faturamentoComissoes + faturamentoTrocas
 
   // Total de parcelas por contrato (para calcular custo proporcional)
   const totalParcelasPorContrato = todasParcelas.reduce((acc, p) => {
@@ -424,6 +427,7 @@ export function Relatorios() {
           <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase' }}>Faturamento</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: '#0C447C' }}>{formatBRL(faturamento)}</div>
           {faturamentoComissoes > 0 && <div style={{ fontSize: 11, color: '#0A5C42', marginTop: 4 }}>inclui {formatBRL(faturamentoComissoes)} comissões</div>}
+          {faturamentoTrocas > 0 && <div style={{ fontSize: 11, color: '#7C3AED', marginTop: 4 }}>inclui {formatBRL(faturamentoTrocas)} em trocas</div>}
         </div>
         <div style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', border: '1px solid #eee' }}>
           <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase' }}>Custos</div>
