@@ -233,20 +233,21 @@ function DonutChart({ ativas, disponiveis, manutencao }) {
 
 export default function Dashboard({ setPage = () => {} }) {
   const navigate = (page) => setPage(page)
-  const [dados, setDados] = useState({ placas: [], contratos: [], clientes: [], parcelas: [] })
+  const [dados, setDados] = useState({ placas: [], contratos: [], clientes: [], parcelas: [], comissoes: [] })
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState(6)
   const hoje = new Date()
 
   useEffect(() => {
     async function carregar() {
-      const [p, c, cl, par] = await Promise.all([
+      const [p, c, cl, par, com] = await Promise.all([
         supabase.from('placas').select('*'),
         supabase.from('contratos').select('*, placas(nome, status), clientes(nome), contrato_placas(placa_id, placas(nome))').order('data_inicio', { ascending: false }),
         supabase.from('clientes').select('*'),
         supabase.from('parcelas').select('*'),
+        supabase.from('comissoes').select('*'),
       ])
-      setDados({ placas: p.data || [], contratos: c.data || [], clientes: cl.data || [], parcelas: par.data || [] })
+      setDados({ placas: p.data || [], contratos: c.data || [], clientes: cl.data || [], parcelas: par.data || [], comissoes: com.data || [] })
       setLoading(false)
     }
     carregar()
@@ -308,7 +309,32 @@ export default function Dashboard({ setPage = () => {} }) {
 
   const custosDoMes = calcCustosPropParcelas(parcelasCaixaMes)         // custos de contratos em dinheiro
   const custosPermutaMes = calcCustosPropParcelas(parcelasPermutaMes)  // custos de contratos em permuta (colagem + impressão)
-  const receitaLiquida = receitaMes - custosDoMes
+  const receitaLiquida = receitaMes - custosDoMes  // caixa sem comissões (usado internamente)
+
+  // Comissões recebidas no mês (tipo='comissao', status_pagamento='pago', data_pagamento no mês atual)
+  const comissaoDoMes = dados.comissoes
+    .filter(c => c.tipo !== 'troca_placa' && c.status_pagamento === 'pago')
+    .filter(c => {
+      const d = c.data_pagamento || c.data_inicio
+      if (!d) return false
+      const dt = new Date(d + 'T00:00:00')
+      return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
+    })
+    .reduce((s, c) => s + (c.valor_comissao || 0), 0)
+
+  // Custo de trocas de placa no mês
+  const custoTrocaDoMes = dados.comissoes
+    .filter(c => c.tipo === 'troca_placa')
+    .filter(c => {
+      const d = c.data_inicio
+      if (!d) return false
+      const dt = new Date(d + 'T00:00:00')
+      return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
+    })
+    .reduce((s, c) => s + (Number(c.custo_colagem)||0) + (Number(c.custo_impressao_troca)||0), 0)
+
+  // Receita líquida inclui comissões recebidas; custos incluem trocas
+  const receitaLiquidaTotal = receitaMes + comissaoDoMes - custosDoMes - custoTrocaDoMes
 
   // Parcelas atrasadas
   const parcelasAtrasadas = dados.parcelas.filter(p => {
@@ -455,19 +481,21 @@ export default function Dashboard({ setPage = () => {} }) {
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
         <KpiCard icon={<IcoContract />} label="Contratos Ativos" value={contratosAtivos.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> em relacao ao mes passado</>} />
-        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes)}
+        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes + comissaoDoMes)}
           sub={<>
-            parcelas pagas em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}
+            parcelas + comissões em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}
+            {comissaoDoMes > 0 && <span style={{ display: 'block', color: '#0A5C42', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(comissaoDoMes)} comissões</span>}
             {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(receitaPermutaMes)} em permuta</span>}
           </>} />
         <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue />
         <KpiCard icon={<IcoBoard />}    label="Placas Disponiveis" value={<>{placasDisp} <span style={{ fontSize: 15, fontWeight: 600, color: C.textLight }}>de {totalPlacas}</span></>} bar={pctDisp} />
-        <KpiCard icon={<IcoDollar />}   label="Receita Líquida" value={formatBRL(receitaLiquida)}
+        <KpiCard icon={<IcoDollar />}   label="Receita Líquida" value={formatBRL(receitaLiquidaTotal)}
           sub={<>
-            <span style={{ color: C.textLight }}>caixa real − custos proporcionais</span>
-            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>Permuta: {formatBRL(receitaPermutaMes - custosPermutaMes)} líq. ({formatBRL(receitaPermutaMes)} − {formatBRL(custosPermutaMes)} custos)</span>}
+            <span style={{ color: C.textLight }}>receita + comissões − custos − trocas</span>
+            {custoTrocaDoMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>− {formatBRL(custoTrocaDoMes)} trocas de placa</span>}
+            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>Permuta: {formatBRL(receitaPermutaMes - custosPermutaMes)} líq.</span>}
           </>}
-          highlight={receitaLiquida > 0} />
+          highlight={receitaLiquidaTotal > 0} />
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20 }}>
