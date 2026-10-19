@@ -449,6 +449,7 @@ export default function Contratos() {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Badge texto={STATUS_PAGAMENTO[c.status_pagamento]?.label || c.status_pagamento} cor={STATUS_PAGAMENTO[c.status_pagamento]?.cor} />
                   {c.forma_pagamento === 'permuta' && <Badge texto="🔄 Permuta" cor="#7C3AED" />}
+                  {c.forma_pagamento === 'cartao_credito' && <Badge texto="💳 Crédito" cor="#0284C7" />}
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
                     borderRadius: 20, fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
@@ -641,6 +642,7 @@ export default function Contratos() {
                 { value: 'pix', label: 'Pix' },
                 { value: 'dinheiro', label: 'Dinheiro' },
                 { value: 'transferencia', label: 'Transferência' },
+                { value: 'cartao_credito', label: '💳 Cartão de Crédito' },
                 { value: 'boleto', label: 'Boleto' },
                 { value: 'permuta', label: '🔄 Permuta' },
               ]} />
