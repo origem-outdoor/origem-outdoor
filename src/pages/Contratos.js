@@ -155,10 +155,12 @@ export default function Contratos() {
 
   const updatePlacaData = (placa_id, campo, valor) => {
     setPlacaDatas(prev => {
-      const atual = prev[placa_id] || { data_inicio: '', data_fim: '' }
+      const atual = prev[placa_id] || { data_inicio: '', data_fim: '', duracao_tipo: '3m' }
       const atualizado = { ...atual, [campo]: valor }
-      if (campo === 'data_inicio' && valor && form.duracao_tipo !== 'custom') {
-        atualizado.data_fim = calcDataFim(valor, form.duracao_tipo)
+      const duracao = campo === 'duracao_tipo' ? valor : atualizado.duracao_tipo
+      const inicio = campo === 'data_inicio' ? valor : atualizado.data_inicio
+      if ((campo === 'data_inicio' || campo === 'duracao_tipo') && inicio && duracao !== 'custom') {
+        atualizado.data_fim = calcDataFim(inicio, duracao)
       }
       return { ...prev, [placa_id]: atualizado }
     })
@@ -196,7 +198,8 @@ export default function Contratos() {
       ? Object.fromEntries((c.contrato_placas || []).map(cp => [
           cp.placa_id, {
             data_inicio: cp.data_inicio || c.data_inicio || '',
-            data_fim: cp.data_fim || c.data_fim || ''
+            data_fim: cp.data_fim || c.data_fim || '',
+            duracao_tipo: c.duracao_tipo || '3m'
           }
         ]))
       : {}
@@ -493,14 +496,27 @@ export default function Contratos() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {form.placa_ids.map(pid => {
                     const placa = placas.find(p => p.id === pid)
-                    const datas = placaDatas[pid] || { data_inicio: '', data_fim: '' }
+                    const datas = placaDatas[pid] || { data_inicio: '', data_fim: '', duracao_tipo: '3m' }
+                    const duracaoPlaca = datas.duracao_tipo || '3m'
                     return (
                       <div key={pid} style={{
-                        display: 'grid', gridTemplateColumns: '1fr 150px 150px', gap: 10, alignItems: 'center',
+                        display: 'grid', gridTemplateColumns: '1fr 155px 135px 135px', gap: 10, alignItems: 'center',
                         background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid #DBEAFE'
                       }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a18' }}>
                           🪧 {placa?.nome || pid}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#1D4ED8', fontWeight: 600, marginBottom: 3 }}>Duração</div>
+                          <select value={duracaoPlaca} onChange={e => updatePlacaData(pid, 'duracao_tipo', e.target.value)}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1.5px solid #93C5FD', fontSize: 12, boxSizing: 'border-box', background: '#fff' }}>
+                            <option value="14d">14 dias (bi-semana)</option>
+                            <option value="28d">28 dias (2 bi-semanas)</option>
+                            <option value="3m">3 meses</option>
+                            <option value="6m">6 meses</option>
+                            <option value="1a">1 ano</option>
+                            <option value="custom">Personalizado</option>
+                          </select>
                         </div>
                         <div>
                           <div style={{ fontSize: 10, color: '#3B82F6', fontWeight: 600, marginBottom: 3 }}>Check-in</div>
@@ -515,9 +531,6 @@ export default function Contratos() {
                       </div>
                     )
                   })}
-                </div>
-                <div style={{ fontSize: 11, color: '#3B82F6', marginTop: 8 }}>
-                  💡 Selecione a duração abaixo para calcular o check-out automaticamente ao preencher o check-in.
                 </div>
               </div>
             )}
@@ -560,7 +573,6 @@ export default function Contratos() {
               ]} />
             </div>
 
-            <Select label="Duração" value={form.duracao_tipo} onChange={v => set('duracao_tipo', v)} options={DURACOES} />
             <Input label="Data início" value={form.data_inicio} onChange={v => set('data_inicio', v)} type="date" required />
             <Input label="Data fim" value={form.data_fim} onChange={v => set('data_fim', v)} type="date" required />
             <Select label="Modalidade" value={form.modalidade} onChange={v => set('modalidade', v)} options={[
