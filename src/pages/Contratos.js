@@ -135,30 +135,13 @@ export default function Contratos() {
     return novo
   })
 
-  // Recalcula parcelas apenas ao abrir modal novo ou mudar nº de parcelas
-  // NÃO recalcula se parcelas já foram editadas manualmente (vieram do banco ou foram ajustadas)
-  const parcelasInicializadasRef = React.useRef(false)
-  useEffect(() => {
-    if (!modal) { parcelasInicializadasRef.current = false; return }
-    if (form.forma_parcelamento !== 'parcelado') return
-    if (parcelasInicializadasRef.current) return  // já inicializado — não sobrescreve edições manuais
-    parcelasInicializadasRef.current = true
-    const vt = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
-    setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
-  }, [modal, form.forma_parcelamento])
-
-  // Regenera parcelas quando muda num_parcelas ou valor total (reset intencional)
-  const prevNumParcelas = React.useRef(form.num_parcelas)
+  // Recalcula parcelas quando mudam campos relevantes (só para modo parcelado)
   useEffect(() => {
     if (!modal) return
     if (form.forma_parcelamento !== 'parcelado') return
-    if (!parcelasInicializadasRef.current) return
     const vt = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
-    if (prevNumParcelas.current !== form.num_parcelas) {
-      prevNumParcelas.current = form.num_parcelas
-      setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
-    }
-  }, [form.num_parcelas, form.valor_veiculacao, form.valor_arte, form.valor_impressao])
+    setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
+  }, [form.valor_veiculacao, form.valor_arte, form.valor_impressao, form.forma_parcelamento, form.num_parcelas, form.data_inicio, modal])
 
   const atualizarParcela = (idx, campo, valor) => {
     setParcelas(prev => {
@@ -198,7 +181,6 @@ export default function Contratos() {
         const { data: parcsExist } = await supabase.from('parcelas').select('*').eq('contrato_id', c.id).order('numero')
         if (parcsExist && parcsExist.length > 0) {
           setParcelas(parcsExist)
-          parcelasInicializadasRef.current = true
         } else {
           const vt = c.valor_total || 0
           setParcelas(gerarParcelasContrato(vt, c.num_parcelas || 2, c.data_inicio))
@@ -309,12 +291,8 @@ export default function Contratos() {
       })
       await supabase.from('contrato_placas').insert(placasRel)
 
-      // Parcelas — parcelado: N parcelas geradas; à vista pago: 1 parcela paga automática
-      const parcelasValidas = form.forma_parcelamento === 'parcelado'
-        ? parcelas.filter(p => p.data_vencimento)
-        : (form.status_pagamento === 'pago'
-            ? [{ numero: 1, valor: valorTotal, data_vencimento: form.data_pagamento || dataInicioContrato, status: 'paga', data_pagamento: form.data_pagamento || null }]
-            : [])
+      // Parcelas — só salva quando parcelado
+      const parcelasValidas = form.forma_parcelamento === 'parcelado' ? parcelas.filter(p => p.data_vencimento) : []
       if (parcelasValidas.length > 0) {
         const parcelasPayload = parcelasValidas.map(p => ({
           contrato_id,
