@@ -573,8 +573,6 @@ export default function Contratos() {
               ]} />
             </div>
 
-            <Input label="Data início" value={form.data_inicio} onChange={v => set('data_inicio', v)} type="date" required />
-            <Input label="Data fim" value={form.data_fim} onChange={v => set('data_fim', v)} type="date" required />
             <Select label="Modalidade" value={form.modalidade} onChange={v => set('modalidade', v)} options={[
               { value: 'veiculacao', label: 'Só veiculação' },
               { value: 'veiculacao_impressao', label: 'Veiculação + Impressão' },
