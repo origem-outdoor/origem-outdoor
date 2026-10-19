@@ -181,7 +181,9 @@ export function Comissoes() {
 
   const totalComissoes = comissoes.filter(c => c.status_pagamento === 'pago' && c.tipo !== 'troca_placa').reduce((s, c) => s + (c.valor_comissao || 0), 0)
   const totalTrocas = comissoes.filter(c => c.tipo === 'troca_placa').length
+  const totalRecebidoTrocas = comissoes.filter(c => c.tipo === 'troca_placa').reduce((s, c) => s + (Number(c.valor_recebido_troca) || 0), 0)
   const custoTrocas = comissoes.filter(c => c.tipo === 'troca_placa').reduce((s, c) => s + (Number(c.custo_colagem) || 0) + (Number(c.custo_impressao_troca) || 0), 0)
+  const totalRecebido = totalComissoes + totalRecebidoTrocas
 
   if (loading) return <div style={{ color: '#888' }}>Carregando...</div>
 
@@ -192,7 +194,8 @@ export function Comissoes() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 24 }}>
         <div style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', border: '1px solid #eee' }}>
           <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase' }}>Total recebido</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#0A5C42' }}>{formatBRL(totalComissoes)}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#0A5C42' }}>{formatBRL(totalRecebido)}</div>
+          {totalRecebidoTrocas > 0 && <div style={{ fontSize: 11, color: '#7C3AED', marginTop: 4 }}>incl. {formatBRL(totalRecebidoTrocas)} trocas</div>}
         </div>
         <div style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', border: '1px solid #eee' }}>
           <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase' }}>Registros</div>
@@ -255,7 +258,15 @@ export function Comissoes() {
                 <Input label="Período início" value={form.data_inicio || ''} onChange={v => set('data_inicio', v)} type="date" />
                 <Input label="Período fim" value={form.data_fim || ''} onChange={v => set('data_fim', v)} type="date" />
               </div>
-              <Input label="Valor recebido do cliente (R$)" value={form.valor_recebido_troca || 0} onChange={v => set('valor_recebido_troca', Number(v))} type="number" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <Input label="Valor recebido do cliente (R$)" value={form.valor_recebido_troca || 0} onChange={v => set('valor_recebido_troca', Number(v))} type="number" />
+                <Select label="Forma de pagamento" value={form.status_pagamento || 'aguardando'} onChange={v => set('status_pagamento', v)} options={[
+                  { value: 'aguardando', label: 'Aguardando' },
+                  { value: 'pago', label: 'Pago' },
+                  { value: 'atrasado', label: 'Atrasado' },
+                ]} />
+              </div>
+              {form.status_pagamento === 'pago' && <Input label="Data do recebimento" value={form.data_pagamento || ''} onChange={v => set('data_pagamento', v)} type="date" />}
               <div style={{ background: '#FFF1F0', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, fontWeight: 600, color: '#9A0000' }}>
                 Custo total da troca: {formatBRL((Number(form.custo_colagem)||0) + (Number(form.custo_impressao_troca)||0))}
                 {Number(form.valor_recebido_troca) > 0 && <span style={{ color: '#15803d', marginLeft: 16 }}>· Lucro: {formatBRL(Number(form.valor_recebido_troca) - (Number(form.custo_colagem)||0) - (Number(form.custo_impressao_troca)||0))}</span>}
@@ -352,7 +363,8 @@ export function Relatorios() {
   // Faturamento = soma das parcelas pagas no período + comissões recebidas
   const faturamentoParcelas = parcelasDoPeriodo.reduce((s, p) => s + (Number(p.valor) || 0), 0)
   const faturamentoComissoes = comissoesPagas.reduce((s, c) => s + (c.valor_comissao || 0), 0)
-  const faturamentoTrocas = trocasNoPeriodo.reduce((s, c) => s + (Number(c.valor_recebido_troca) || 0), 0)
+  const trocasPagasNoPeriodo = trocasNoPeriodo.filter(c => c.status_pagamento === 'pago')
+  const faturamentoTrocas = trocasPagasNoPeriodo.reduce((s, c) => s + (Number(c.valor_recebido_troca) || 0), 0)
   const faturamento = faturamentoParcelas + faturamentoComissoes + faturamentoTrocas
 
   // Total de parcelas por contrato (para calcular custo proporcional)
