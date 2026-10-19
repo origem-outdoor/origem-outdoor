@@ -381,7 +381,7 @@ export default function App() {
               background: COLORS.bg,
               width: '100vw', boxSizing: 'border-box',
             }}>
-              <PageComponent setPage={handleSetPage} />
+              <PageComponent key={page} setPage={handleSetPage} />
             </main>
           </>
         ) : (
@@ -392,7 +392,7 @@ export default function App() {
               padding: '28px 32px', background: COLORS.bg,
               maxWidth: 'calc(100vw - 230px)', boxSizing: 'border-box',
             }}>
-              <PageComponent setPage={handleSetPage} />
+              <PageComponent key={page} setPage={handleSetPage} />
             </main>
           </>
         )}

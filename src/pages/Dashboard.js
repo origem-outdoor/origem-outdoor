@@ -306,7 +306,11 @@ export default function Dashboard({ setPage = () => {} }) {
         const fim    = c.data_fim    ? new Date(c.data_fim    + 'T23:59:59') : null
         return inicio && fim && inicio <= hoje && fim >= hoje
       })
-      .map(c => c.placa_id)
+      .flatMap(c => {
+        const fromJoin = (c.contrato_placas || []).map(cp => cp.placa_id).filter(Boolean)
+        const fromLegacy = c.placa_id ? [c.placa_id] : []
+        return fromJoin.length > 0 ? fromJoin : fromLegacy
+      })
   )
   const placasAtivas   = placasComContratoAtivo.size
   const placasManut    = dados.placas.filter(p => p.status === 'manutencao').length

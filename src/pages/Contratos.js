@@ -294,20 +294,35 @@ export default function Contratos() {
       })
       await supabase.from('contrato_placas').insert(placasRel)
 
-      // Parcelas — só salva quando parcelado
-      const parcelasValidas = form.forma_parcelamento === 'parcelado' ? parcelas.filter(p => p.data_vencimento) : []
-      if (parcelasValidas.length > 0) {
-        const parcelasPayload = parcelasValidas.map(p => ({
+      // Parcelas
+      if (form.forma_parcelamento === 'parcelado') {
+        const parcelasValidas = parcelas.filter(p => p.data_vencimento)
+        if (parcelasValidas.length > 0) {
+          const parcelasPayload = parcelasValidas.map(p => ({
+            contrato_id,
+            numero: p.numero,
+            valor: p.valor,
+            data_vencimento: p.data_vencimento,
+            status: p.status || 'pendente',
+            observacoes: p.observacoes || null,
+            data_pagamento: p.data_pagamento || null,
+          }))
+          const { error: parcErr } = await supabase.from('parcelas').insert(parcelasPayload)
+          if (parcErr) console.warn('Erro ao salvar parcelas:', parcErr.message)
+        }
+      } else {
+        // À vista: cria 1 parcela para aparecer no financeiro e dashboard
+        const statusParcela = form.status_pagamento === 'pago' ? 'paga' : 'pendente'
+        const { error: avErr } = await supabase.from('parcelas').insert({
           contrato_id,
-          numero: p.numero,
-          valor: p.valor,
-          data_vencimento: p.data_vencimento,
-          status: p.status || 'pendente',
-          observacoes: p.observacoes || null,
-          data_pagamento: p.data_pagamento || null,
-        }))
-        const { error: parcErr } = await supabase.from('parcelas').insert(parcelasPayload)
-        if (parcErr) console.warn('Erro ao salvar parcelas:', parcErr.message)
+          numero: 1,
+          valor: valorTotal,
+          data_vencimento: form.data_pagamento || dataInicioContrato || null,
+          status: statusParcela,
+          data_pagamento: statusParcela === 'paga' ? (form.data_pagamento || null) : null,
+          observacoes: 'Pagamento à vista',
+        })
+        if (avErr) console.warn('Erro ao salvar parcela avista:', avErr.message)
       }
     }
 
