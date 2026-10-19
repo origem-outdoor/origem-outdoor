@@ -263,19 +263,22 @@ export function Comissoes() {
 export function Relatorios() {
   const [contratos, setContratos] = useState([])
   const [parcelas, setParcelas] = useState([])
+  const [todasParcelas, setTodasParcelas] = useState([])
   const [comissoes, setComissoes] = useState([])
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState('6m')
 
   useEffect(() => {
     async function carregar() {
-      const [co, pa, cm] = await Promise.all([
+      const [co, pa, todas, cm] = await Promise.all([
         supabase.from('contratos').select('*, placas(nome), clientes(nome)').order('data_inicio', { ascending: false }),
         supabase.from('parcelas').select('*').in('status', ['paga','pago']),
+        supabase.from('parcelas').select('contrato_id'),
         supabase.from('comissoes').select('*'),
       ])
       setContratos(co.data || [])
       setParcelas(pa.data || [])
+      setTodasParcelas(todas.data || [])
       setComissoes(cm.data || [])
       setLoading(false)
     }
@@ -307,8 +310,26 @@ export function Relatorios() {
   // Faturamento = soma das parcelas pagas no período
   const faturamento = parcelasDoPeriodo.reduce((s, p) => s + (Number(p.valor) || 0), 0)
 
-  // Custos = dos contratos com parcelas pagas no período
-  const custos = contratosNoPeriodo.reduce((s, c) => s + (c.custo_colador || 0) + (c.custo_impressao || 0) + (c.custo_terreno_proporcional || 0) + (c.custo_extra || 0) + (c.valor_imposto || 0), 0)
+  // Total de parcelas por contrato (para calcular custo proporcional)
+  const totalParcelasPorContrato = todasParcelas.reduce((acc, p) => {
+    acc[p.contrato_id] = (acc[p.contrato_id] || 0) + 1
+    return acc
+  }, {})
+
+  // Parcelas pagas no período por contrato
+  const parcelasPagasPorContrato = parcelasDoPeriodo.reduce((acc, p) => {
+    acc[p.contrato_id] = (acc[p.contrato_id] || 0) + 1
+    return acc
+  }, {})
+
+  // Custos proporcionais: custo_total_contrato × (parcelas_pagas_no_período / total_parcelas_contrato)
+  const custos = contratosNoPeriodo.reduce((s, c) => {
+    const totalParcelas = totalParcelasPorContrato[c.id] || 1
+    const parcelasPagas = parcelasPagasPorContrato[c.id] || 0
+    const proporcao = parcelasPagas / totalParcelas
+    const custoTotal = (c.custo_colador || 0) + (c.custo_impressao || 0) + (c.custo_terreno_proporcional || 0) + (c.custo_extra || 0) + (c.valor_imposto || 0)
+    return s + custoTotal * proporcao
+  }, 0)
   const lucro = faturamento - custos
   const comissaoTotal = comsFiltradas.filter(c => c.status_pagamento === 'pago').reduce((s, c) => s + (c.valor_comissao || 0), 0)
 
