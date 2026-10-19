@@ -51,7 +51,7 @@ function PlacaCard({ p, onCreateContrato }) {
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a18' }}>{p.nome}</div>
           <div style={{ fontSize: 12, color: '#888' }}>{p.tipo_placa === 'dupla' ? '18×3m dupla' : '9×3m simples'}</div>
-          {p.localizacao && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{p.localizacao}</div>}
+          {p.endereco && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{p.endereco}</div>}
         </div>
         <span style={{ fontSize: 22 }}>{isPreste ? '⏳' : st.emoji}</span>
       </div>
@@ -92,7 +92,7 @@ export default function Disponibilidade({ setPage }) {
     async function carregar() {
       const [pl, co] = await Promise.all([
         // Busca todas as placas sem filtro (evita bug PostgREST com NULL), filtra inativas no JS
-        supabase.from('placas').select('id, nome, tipo, localizacao, status'),
+        supabase.from('placas').select('id, nome, tipo, endereco, status'),
         supabase.from('contratos')
           .select('id, placa_id, data_inicio, data_fim, status, clientes(nome), contrato_placas(placa_id, data_inicio, data_fim)')
           .not('data_inicio', 'is', null)

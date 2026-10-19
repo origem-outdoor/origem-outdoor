@@ -242,7 +242,7 @@ export default function Dashboard({ setPage = () => {} }) {
     async function carregar() {
       const [p, c, cl, par] = await Promise.all([
         supabase.from('placas').select('*'),
-        supabase.from('contratos').select('*, placas(nome, status), clientes(nome), contrato_placas(placa_id)').order('data_inicio', { ascending: false }),
+        supabase.from('contratos').select('*, placas(nome, status), clientes(nome), contrato_placas(placa_id, placas(nome))').order('data_inicio', { ascending: false }),
         supabase.from('clientes').select('*'),
         supabase.from('parcelas').select('*'),
       ])
@@ -473,7 +473,10 @@ export default function Dashboard({ setPage = () => {} }) {
                 {recentes.map((c, i) => (
                   <tr key={c.id} style={{ borderBottom: i < recentes.length-1 ? `1px solid ${C.borderLight}` : 'none' }}>
                     <td style={{ padding: '13px 8px', fontWeight: 600, color: C.text }}>{c.clientes?.nome || '-'}</td>
-                    <td style={{ padding: '13px 8px', color: C.textMed }}>{c.placas?.nome || '-'}</td>
+                    <td style={{ padding: '13px 8px', color: C.textMed }}>{(() => {
+                      const names = (c.contrato_placas || []).map(cp => cp.placas?.nome).filter(Boolean)
+                      return names.length > 0 ? names.join(' / ') : (c.placas?.nome || '-')
+                    })()}</td>
                     <td style={{ padding: '13px 8px', textAlign: 'right', fontWeight: 600, color: C.text }}>{formatBRL(c.valor_total)}</td>
                     <td style={{ padding: '13px 8px' }}><StatusBadge status={statusExibicao(c)} /></td>
                     <td style={{ padding: '13px 8px', color: C.textMed }}>{formatDate(c.data_fim)}</td>
