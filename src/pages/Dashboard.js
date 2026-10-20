@@ -93,7 +93,7 @@ function PeriodoPicker({ valor, onChange }) {
   )
 }
 
-function KpiCard({ icon, label, value, sub, blue = false, bar = null, onClick = null }) {
+function KpiCard({ icon, label, value, sub, blue = false, bar = null, onClick = null, highlight = false }) {
   return (
     <div onClick={onClick} style={{
       background: blue ? C.primary : C.surface,
@@ -532,9 +532,10 @@ export default function Dashboard({ setPage = () => {} }) {
         <ModalWrap title={`Faturamento — últimos ${periodo} meses`}>
           <RowItem label="Total acumulado" value={formatBRL(fatPeriodo)} color="#1565C0" />
           <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Por mês:</div>
-          {dados._meses && dados._meses.slice(-periodo).map(m => (
-            <RowItem key={m.label} label={m.label} value={formatBRL(m.valor)} />
-          ))}
+          {mesesPeriodo.map(m => {
+            const label = new Date(m.ano, m.mes-1, 1).toLocaleDateString('pt-BR', {month:'short', year:'numeric'})
+            return <RowItem key={label} label={label} value={formatBRL(m.valor)} />
+          })}
         </ModalWrap>
       )}
 
