@@ -511,7 +511,7 @@ export default function Contratos() {
                     <div style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>{p.tipo === 'dupla' ? '18x3m • dupla face' : '9x3m'}</div>
                     {p.tipo === 'dupla' && (() => {
                       const facesEmUso = contratos
-                        .filter(c => calcStatusDinamico(c) === 'ativo' && c.id !== form.id)
+                        .filter(c => calcStatus(c.data_inicio, c.data_fim, c.status) === 'ativo' && c.id !== form.id)
                         .flatMap(c => (c.contrato_placas || []))
                         .filter(cp => cp.placa_id === p.id)
                         .map(cp => cp.face || 'AB')
