@@ -321,7 +321,7 @@ export function Relatorios() {
   useEffect(() => {
     async function carregar() {
       const [co, pa, todas, cm] = await Promise.all([
-        supabase.from('contratos').select('*, placas(nome), clientes(nome)').order('data_inicio', { ascending: false }),
+        supabase.from('contratos').select('*, placas(nome), clientes(nome), contrato_placas(placa_id, valor_por_placa, placas(nome))').order('data_inicio', { ascending: false }),
         supabase.from('parcelas').select('*').in('status', ['paga','pago']),
         supabase.from('parcelas').select('contrato_id'),
         supabase.from('comissoes').select('*'),
@@ -395,13 +395,29 @@ export function Relatorios() {
   // Mapa contrato_id → contrato (para lookup rápido)
   const contratoMap = Object.fromEntries(contratos.map(c => [c.id, c]))
 
-  // Ranking por placa — somando parcelas pagas no período
+  // Ranking por placa — distribui valor da parcela proporcionalmente entre placas do contrato
   const porPlaca = {}
   parcelasDoPeriodo.forEach(p => {
     const cont = contratoMap[p.contrato_id]
-    const nome = cont?.placas?.nome || 'Sem placa'
-    if (!porPlaca[nome]) porPlaca[nome] = 0
-    porPlaca[nome] += Number(p.valor) || 0
+    const placasContrato = cont?.contrato_placas || []
+    if (placasContrato.length === 0) {
+      const nome = cont?.placas?.nome || 'Sem placa'
+      if (!porPlaca[nome]) porPlaca[nome] = 0
+      porPlaca[nome] += Number(p.valor) || 0
+    } else if (placasContrato.length === 1) {
+      const nome = placasContrato[0]?.placas?.nome || 'Sem placa'
+      if (!porPlaca[nome]) porPlaca[nome] = 0
+      porPlaca[nome] += Number(p.valor) || 0
+    } else {
+      // Distribui proporcionalmente ao valor_por_placa de cada placa
+      const totalContrato = placasContrato.reduce((s, cp) => s + (Number(cp.valor_por_placa) || 0), 0)
+      placasContrato.forEach(cp => {
+        const nome = cp?.placas?.nome || 'Sem placa'
+        const proporcao = totalContrato > 0 ? (Number(cp.valor_por_placa) || 0) / totalContrato : 1 / placasContrato.length
+        if (!porPlaca[nome]) porPlaca[nome] = 0
+        porPlaca[nome] += (Number(p.valor) || 0) * proporcao
+      })
+    }
   })
   const rankingPlacas = Object.entries(porPlaca).sort((a, b) => b[1] - a[1])
 
