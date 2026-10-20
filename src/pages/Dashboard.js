@@ -341,9 +341,9 @@ export default function Dashboard({ setPage = () => {} }) {
     .reduce((s, c) => s + (Number(c.custo_colagem)||0) + (Number(c.custo_impressao_troca)||0), 0)
 
   const faturamentoTrocaDoMes = dados.comissoes
-    .filter(c => c.tipo === 'troca_placa')
+    .filter(c => c.tipo === 'troca_placa' && c.status_pagamento === 'pago')
     .filter(c => {
-      const d = c.data_inicio
+      const d = c.data_pagamento || c.data_inicio
       if (!d) return false
       const dt = new Date(d + 'T00:00:00')
       return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
@@ -397,7 +397,25 @@ export default function Dashboard({ setPage = () => {} }) {
     })
     return Object.values(mapa)
   })()
-  const fatPeriodo = mesesPeriodo.reduce((s, m) => s + m.valor, 0)
+  // Início do período para filtrar comissoes/trocas
+  const inicioPeriodo = new Date(hoje.getFullYear(), hoje.getMonth() - (periodo - 1), 1)
+  const comissoesDoPeriodo = dados.comissoes
+    .filter(c => c.tipo !== 'troca_placa' && c.status_pagamento === 'pago')
+    .filter(c => {
+      const d = c.data_pagamento || c.data_inicio
+      if (!d) return false
+      return new Date(d + 'T00:00:00') >= inicioPeriodo
+    })
+    .reduce((s, c) => s + (c.valor_comissao || 0), 0)
+  const trocasDoPeriodo = dados.comissoes
+    .filter(c => c.tipo === 'troca_placa' && c.status_pagamento === 'pago')
+    .filter(c => {
+      const d = c.data_pagamento || c.data_inicio
+      if (!d) return false
+      return new Date(d + 'T00:00:00') >= inicioPeriodo
+    })
+    .reduce((s, c) => s + (Number(c.valor_recebido_troca) || 0), 0)
+  const fatPeriodo = mesesPeriodo.reduce((s, m) => s + m.valor, 0) + comissoesDoPeriodo + trocasDoPeriodo
 
   const vencendo5 = contratosAtivos
     .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 7 })
@@ -530,7 +548,10 @@ export default function Dashboard({ setPage = () => {} }) {
       {modal === 'faturamento' && (
         <ModalWrap title={`Faturamento — últimos ${periodo} meses`}>
           <RowItem label="Total acumulado" value={formatBRL(fatPeriodo)} color="#1565C0" />
-          <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Por mês:</div>
+          <RowItem label="Parcelas pagas" value={formatBRL(mesesPeriodo.reduce((s,m)=>s+m.valor,0))} />
+          {comissoesDoPeriodo > 0 && <RowItem label="+ Comissões recebidas" value={formatBRL(comissoesDoPeriodo)} color="#0A5C42" />}
+          {trocasDoPeriodo > 0 && <RowItem label="+ Trocas de placa recebidas" value={formatBRL(trocasDoPeriodo)} color="#7C3AED" />}
+          <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Parcelas por mês:</div>
           {mesesPeriodo.map(m => {
             const label = new Date(m.ano, m.mes-1, 1).toLocaleDateString('pt-BR', {month:'short', year:'numeric'})
             return <RowItem key={label} label={label} value={formatBRL(m.valor)} />
