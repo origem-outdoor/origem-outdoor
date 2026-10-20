@@ -155,6 +155,7 @@ export default function Contratos() {
   }
 
   const [placaDatas, setPlacaDatas] = useState({})
+  const [placaFaces, setPlacaFaces] = useState({}) // {[placa_id]: 'AB' | 'A' | 'B'}
 
   const updatePlacaData = (placa_id, campo, valor) => {
     setPlacaDatas(prev => {
@@ -211,6 +212,11 @@ export default function Contratos() {
     )
     setNovoCliente({ nome: '', telefone: '' })
     setCriandoCliente(false)
+    // Faces das placas (só relevante para duplas)
+    setPlacaFaces(c
+      ? Object.fromEntries((c.contrato_placas || []).map(cp => [cp.placa_id, cp.face || 'AB']))
+      : {}
+    )
     setModal(c ? 'editar' : 'novo')
   }
 
@@ -294,8 +300,9 @@ export default function Contratos() {
       // Placas
       const placasRel = form.placa_ids.map(placa_id => {
         const datas = placaDatas[placa_id] || {}
+        const face = placaFaces[placa_id] || 'AB'
         return {
-          contrato_id, placa_id, face: 'AB', valor_por_placa: valorPorPlaca,
+          contrato_id, placa_id, face, valor_por_placa: valorPorPlaca,
           data_inicio: datas.data_inicio || dataInicioContrato || null,
           data_fim: datas.data_fim || dataFimContrato || null,
         }
@@ -501,7 +508,22 @@ export default function Contratos() {
                   <input type="checkbox" checked={form.placa_ids.includes(p.id)} onChange={() => togglePlaca(p.id)} />
                   <div>
                     <div>{p.nome}</div>
-                    <div style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>{p.tipo === 'dupla' ? '18x3m' : '9x3m'}</div>
+                    <div style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>{p.tipo === 'dupla' ? '18x3m • dupla face' : '9x3m'}</div>
+                    {p.tipo === 'dupla' && (() => {
+                      const facesEmUso = contratos
+                        .filter(c => calcStatusDinamico(c) === 'ativo' && c.id !== form.id)
+                        .flatMap(c => (c.contrato_placas || []))
+                        .filter(cp => cp.placa_id === p.id)
+                        .map(cp => cp.face || 'AB')
+                      const aOcup = facesEmUso.some(f => f === 'A' || f === 'AB')
+                      const bOcup = facesEmUso.some(f => f === 'B' || f === 'AB')
+                      if (!aOcup && !bOcup) return null
+                      return <div style={{ fontSize: 10, marginTop: 2 }}>
+                        <span style={{ color: aOcup ? '#C2410C' : '#166534', fontWeight: 600 }}>Face A: {aOcup ? 'ocupada' : 'livre'}</span>
+                        {' · '}
+                        <span style={{ color: bOcup ? '#C2410C' : '#166534', fontWeight: 600 }}>Face B: {bOcup ? 'ocupada' : 'livre'}</span>
+                      </div>
+                    })()}
                   </div>
                 </label>
               ))}
@@ -530,6 +552,21 @@ export default function Contratos() {
                       }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a18' }}>
                           🪧 {placa?.nome || pid}
+                          {placa?.tipo === 'dupla' && (
+                            <div style={{ marginTop: 4 }}>
+                              <span style={{ fontSize: 10, color: '#1D4ED8', fontWeight: 600, marginRight: 6 }}>FACE:</span>
+                              {['AB','A','B'].map(f => (
+                                <button key={f} onClick={() => setPlacaFaces(prev => ({ ...prev, [pid]: f }))}
+                                  style={{ marginRight: 4, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                    border: `1.5px solid ${(placaFaces[pid]||'AB')===f ? '#1D4ED8' : '#ccc'}`,
+                                    background: (placaFaces[pid]||'AB')===f ? '#DBEAFE' : '#fff',
+                                    color: (placaFaces[pid]||'AB')===f ? '#1D4ED8' : '#666'
+                                  }}>
+                                  {f === 'AB' ? 'Dupla completa' : `Face ${f}`}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div>
                           <div style={{ fontSize: 10, color: '#1D4ED8', fontWeight: 600, marginBottom: 3 }}>Duração</div>

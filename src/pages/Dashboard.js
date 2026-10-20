@@ -359,20 +359,37 @@ export default function Dashboard({ setPage = () => {} }) {
     const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00') : null
     return venc && venc < hoje
   })
-  const totalPlacas      = dados.placas.length
-  // Ocupacao calculada pelos contratos ativos de hoje (nao depende do status da placa)
+  const totalPlacas = dados.placas.length
+  // Ocupação: para placas duplas, verificar se AMBAS as faces estão ocupadas
+  // (face 'AB' = dupla inteira; 'A' ou 'B' = apenas um lado — dupla só "ocupa" quando AB ou A+B juntas)
+  const facesEmUso = {} // { [placa_id]: Set of faces in use }
+  contratosAtivos
+    .filter(c => {
+      const inicio = c.data_inicio ? new Date(c.data_inicio + 'T00:00:00') : null
+      const fim    = c.data_fim    ? new Date(c.data_fim    + 'T23:59:59') : null
+      return inicio && fim && inicio <= hoje && fim >= hoje
+    })
+    .flatMap(c => {
+      const fromJoin = (c.contrato_placas || []).map(cp => ({ placa_id: cp.placa_id, face: cp.face || 'AB' })).filter(cp => cp.placa_id)
+      const fromLegacy = c.placa_id ? [{ placa_id: c.placa_id, face: 'AB' }] : []
+      return fromJoin.length > 0 ? fromJoin : fromLegacy
+    })
+    .forEach(({ placa_id, face }) => {
+      if (!facesEmUso[placa_id]) facesEmUso[placa_id] = new Set()
+      facesEmUso[placa_id].add(face)
+    })
   const placasComContratoAtivo = new Set(
-    contratosAtivos
-      .filter(c => {
-        const inicio = c.data_inicio ? new Date(c.data_inicio + 'T00:00:00') : null
-        const fim    = c.data_fim    ? new Date(c.data_fim    + 'T23:59:59') : null
-        return inicio && fim && inicio <= hoje && fim >= hoje
+    dados.placas
+      .filter(p => {
+        const faces = facesEmUso[p.id]
+        if (!faces) return false
+        if (p.tipo === 'dupla') {
+          // dupla: ocupada se face AB, ou se ambas A e B estão em uso
+          return faces.has('AB') || (faces.has('A') && faces.has('B'))
+        }
+        return faces.size > 0
       })
-      .flatMap(c => {
-        const fromJoin = (c.contrato_placas || []).map(cp => cp.placa_id).filter(Boolean)
-        const fromLegacy = c.placa_id ? [c.placa_id] : []
-        return fromJoin.length > 0 ? fromJoin : fromLegacy
-      })
+      .map(p => p.id)
   )
   const placasAtivas   = placasComContratoAtivo.size
   const placasManut    = dados.placas.filter(p => p.status === 'manutencao').length
