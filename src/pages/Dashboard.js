@@ -145,6 +145,7 @@ function StatusBadge({ status }) {
 
 function BarChart({ meses }) {
   const nomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+  const [tooltip, setTooltip] = React.useState(null)
   if (!meses || meses.length === 0) return (
     <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textLight, fontSize: 13 }}>
       Sem dados de faturamento
@@ -169,18 +170,75 @@ function BarChart({ meses }) {
         borderBottom: `1px solid ${C.borderLight}`,
         backgroundImage: `linear-gradient(${C.borderLight} 1px, transparent 1px)`,
         backgroundSize: '100% 50px', backgroundPosition: '0 0',
+        position: 'relative',
       }}>
+        {tooltip && (
+          <div style={{
+            position: 'absolute',
+            left: tooltip.pct + '%',
+            top: tooltip.top,
+            transform: 'translate(-50%, -8px)',
+            background: '#1a2233',
+            color: '#fff',
+            borderRadius: 10,
+            padding: '10px 14px',
+            fontSize: 12,
+            zIndex: 999,
+            minWidth: 170,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+          }}>
+            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 7, borderBottom: '1px solid #334155', paddingBottom: 5 }}>
+              {nomes[tooltip.m.mes - 1]} {tooltip.m.ano}
+            </div>
+            {(tooltip.m.valorLocacoes > 0) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginBottom: 3 }}>
+                <span style={{ color: '#93c5fd' }}>Locações</span>
+                <span style={{ fontWeight: 700 }}>{formatBRL(tooltip.m.valorLocacoes)}</span>
+              </div>
+            )}
+            {(tooltip.m.valorTrocas > 0) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginBottom: 3 }}>
+                <span style={{ color: '#c4b5fd' }}>Trocas de placa</span>
+                <span style={{ fontWeight: 700 }}>{formatBRL(tooltip.m.valorTrocas)}</span>
+              </div>
+            )}
+            {(tooltip.m.valorComissoes > 0) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginBottom: 3 }}>
+                <span style={{ color: '#6ee7b7' }}>Comissões</span>
+                <span style={{ fontWeight: 700 }}>{formatBRL(tooltip.m.valorComissoes)}</span>
+              </div>
+            )}
+            {(tooltip.m.valorPermuta > 0) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginBottom: 3 }}>
+                <span style={{ color: '#f9a8d4' }}>Permuta</span>
+                <span style={{ fontWeight: 700 }}>{formatBRL(tooltip.m.valorPermuta)}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, borderTop: '1px solid #334155', marginTop: 5, paddingTop: 5, fontWeight: 800 }}>
+              <span>Total</span>
+              <span>{formatBRL(tooltip.m.valor + (tooltip.m.valorPermuta || 0))}</span>
+            </div>
+          </div>
+        )}
         {meses.map((m, i) => {
           const isLast = i === meses.length - 1
           const h = Math.max(Math.round((m.valor / max) * 180), m.valor > 0 ? 8 : 0)
           const label = formatBRL(m.valor).replace('R$ ','')
+          const pct = meses.length === 1 ? 50 : (i / (meses.length - 1)) * 100
+          const barH = h || 4
           return (
-            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <div key={i}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, cursor: 'default' }}
+              onMouseEnter={() => setTooltip({ m, pct, top: `${200 - barH - 50}px` })}
+              onMouseLeave={() => setTooltip(null)}
+            >
               {isLast
                 ? <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: C.primary, padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap' }}>{label}</span>
                 : <span style={{ fontSize: 11, fontWeight: 700, color: C.textMed, whiteSpace: 'nowrap' }}>{m.valor > 0 ? label : '-'}</span>
               }
-              <div style={{ width: '100%', maxWidth: 52, height: h || 4, background: isLast ? C.primary : '#BBD3F0', borderRadius: '8px 8px 0 0' }} />
+              <div style={{ width: '100%', maxWidth: 52, height: barH, background: isLast ? C.primary : '#BBD3F0', borderRadius: '8px 8px 0 0' }} />
             </div>
           )
         })}
@@ -443,23 +501,30 @@ export default function Dashboard({ setPage = () => {} }) {
   const permutaPeriodo = permutaListPeriodo.reduce((s, p) => s + (p.valor || 0), 0)
   const fatPeriodo = mesesPeriodo.reduce((s, m) => s + m.valor, 0) + permutaPeriodo + comissoesDoPeriodo + trocasDoPeriodo
 
-  // mesesGrafico: barras mensais incluindo trocas e comissoes (para visualizacao real por mês)
+  // mesesGrafico: barras mensais com breakdown por categoria para tooltip
   const mesesGrafico = (() => {
     const mapa = {}
-    mesesPeriodo.forEach(m => { mapa[`${m.ano}-${m.mes}`] = { ...m } })
+    mesesPeriodo.forEach(m => { mapa[`${m.ano}-${m.mes}`] = { ...m, valorLocacoes: m.valor, valorPermuta: 0, valorTrocas: 0, valorComissoes: 0 } })
+    permutaListPeriodo.forEach(p => {
+      const d = p.data_pagamento || p.data_vencimento
+      if (!d) return
+      const dt = new Date(d + 'T00:00:00')
+      const k = `${dt.getFullYear()}-${dt.getMonth()+1}`
+      if (mapa[k]) mapa[k].valorPermuta += p.valor || 0
+    })
     trocasListPeriodo.forEach(c => {
       const d = c.data_pagamento || c.data_inicio
       if (!d) return
       const dt = new Date(d + 'T00:00:00')
       const k = `${dt.getFullYear()}-${dt.getMonth()+1}`
-      if (mapa[k]) mapa[k].valor += Number(c.valor_recebido_troca) || 0
+      if (mapa[k]) { mapa[k].valor += Number(c.valor_recebido_troca) || 0; mapa[k].valorTrocas += Number(c.valor_recebido_troca) || 0 }
     })
     comissoesListPeriodo.forEach(c => {
       const d = c.data_pagamento || c.data_inicio
       if (!d) return
       const dt = new Date(d + 'T00:00:00')
       const k = `${dt.getFullYear()}-${dt.getMonth()+1}`
-      if (mapa[k]) mapa[k].valor += c.valor_comissao || 0
+      if (mapa[k]) { mapa[k].valor += c.valor_comissao || 0; mapa[k].valorComissoes += c.valor_comissao || 0 }
     })
     return Object.values(mapa)
   })()
