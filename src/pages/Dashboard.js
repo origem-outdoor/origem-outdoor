@@ -252,7 +252,7 @@ export default function Dashboard({ setPage = () => {} }) {
         supabase.from('contratos').select('*, placas(nome, status), clientes(nome), contrato_placas(placa_id, placas(nome))').order('data_inicio', { ascending: false }),
         supabase.from('clientes').select('*'),
         supabase.from('parcelas').select('*'),
-        supabase.from('comissoes').select('*'),
+        supabase.from('comissoes').select('*, clientes(nome)'),
       ])
       setDados({ placas: p.data || [], contratos: c.data || [], clientes: cl.data || [], parcelas: par.data || [], comissoes: com.data || [] })
       setLoading(false)
@@ -417,31 +417,52 @@ export default function Dashboard({ setPage = () => {} }) {
   })()
   // Início do período para filtrar comissoes/trocas
   const inicioPeriodo = new Date(hoje.getFullYear(), hoje.getMonth() - (periodo - 1), 1)
-  const comissoesDoPeriodo = dados.comissoes
+  const comissoesListPeriodo = dados.comissoes
     .filter(c => c.tipo !== 'troca_placa' && c.status_pagamento === 'pago')
     .filter(c => {
       const d = c.data_pagamento || c.data_inicio
       if (!d) return false
       return new Date(d + 'T00:00:00') >= inicioPeriodo
     })
-    .reduce((s, c) => s + (c.valor_comissao || 0), 0)
-  const trocasDoPeriodo = dados.comissoes
+  const comissoesDoPeriodo = comissoesListPeriodo.reduce((s, c) => s + (c.valor_comissao || 0), 0)
+  const trocasListPeriodo = dados.comissoes
     .filter(c => c.tipo === 'troca_placa' && c.status_pagamento === 'pago')
     .filter(c => {
       const d = c.data_pagamento || c.data_inicio
       if (!d) return false
       return new Date(d + 'T00:00:00') >= inicioPeriodo
     })
-    .reduce((s, c) => s + (Number(c.valor_recebido_troca) || 0), 0)
-  const permutaPeriodo = dados.parcelas
+  const trocasDoPeriodo = trocasListPeriodo.reduce((s, c) => s + (Number(c.valor_recebido_troca) || 0), 0)
+  const permutaListPeriodo = dados.parcelas
     .filter(p => ['paga','pago'].includes(p.status) && contratoForma.get(p.contrato_id) === 'permuta')
     .filter(p => {
       const d = p.data_pagamento || p.data_vencimento
       if (!d) return false
       return new Date(d + 'T00:00:00') >= inicioPeriodo
     })
-    .reduce((s, p) => s + (p.valor || 0), 0)
+  const permutaPeriodo = permutaListPeriodo.reduce((s, p) => s + (p.valor || 0), 0)
   const fatPeriodo = mesesPeriodo.reduce((s, m) => s + m.valor, 0) + permutaPeriodo + comissoesDoPeriodo + trocasDoPeriodo
+
+  // mesesGrafico: barras mensais incluindo trocas e comissoes (para visualizacao real por mês)
+  const mesesGrafico = (() => {
+    const mapa = {}
+    mesesPeriodo.forEach(m => { mapa[`${m.ano}-${m.mes}`] = { ...m } })
+    trocasListPeriodo.forEach(c => {
+      const d = c.data_pagamento || c.data_inicio
+      if (!d) return
+      const dt = new Date(d + 'T00:00:00')
+      const k = `${dt.getFullYear()}-${dt.getMonth()+1}`
+      if (mapa[k]) mapa[k].valor += Number(c.valor_recebido_troca) || 0
+    })
+    comissoesListPeriodo.forEach(c => {
+      const d = c.data_pagamento || c.data_inicio
+      if (!d) return
+      const dt = new Date(d + 'T00:00:00')
+      const k = `${dt.getFullYear()}-${dt.getMonth()+1}`
+      if (mapa[k]) mapa[k].valor += c.valor_comissao || 0
+    })
+    return Object.values(mapa)
+  })()
 
   const vencendo5 = contratosAtivos
     .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 7 })
@@ -566,8 +587,21 @@ export default function Dashboard({ setPage = () => {} }) {
           <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Parcelas pagas este mês:</div>
           {parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) !== 'permuta').map(p => {
             const cont = dados.contratos.find(c => c.id === p.contrato_id)
-            return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`venc. ${formatDate(p.data_vencimento)}`} value={formatBRL(p.valor)} />
+            return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)}`} value={formatBRL(p.valor)} />
           })}
+          {(() => {
+            const trocasMes = dados.comissoes.filter(c => c.tipo === 'troca_placa' && c.status_pagamento === 'pago' && (() => { const d = c.data_pagamento || c.data_inicio; if (!d) return false; const dt = new Date(d + 'T00:00:00'); return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual })())
+            const comissoesMes = dados.comissoes.filter(c => c.tipo !== 'troca_placa' && c.status_pagamento === 'pago' && (() => { const d = c.data_pagamento || c.data_inicio; if (!d) return false; const dt = new Date(d + 'T00:00:00'); return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual })())
+            const permutaMes = parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) === 'permuta')
+            return (<>
+              {trocasMes.length > 0 && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#7C3AED' }}>Trocas de placa:</div>}
+              {trocasMes.map(c => <RowItem key={c.id} label={c.clientes?.nome || c.descricao || '-'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)}`} value={formatBRL(c.valor_recebido_troca)} color="#7C3AED" />)}
+              {comissoesMes.length > 0 && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#0A5C42' }}>Comissões:</div>}
+              {comissoesMes.map(c => <RowItem key={c.id} label={c.clientes?.nome || c.descricao || '-'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)}`} value={formatBRL(c.valor_comissao)} color="#0A5C42" />)}
+              {permutaMes.length > 0 && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#7C3AED' }}>Permuta (não entra no caixa):</div>}
+              {permutaMes.map(p => { const cont = dados.contratos.find(c => c.id === p.contrato_id); return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)}`} value={formatBRL(p.valor)} color="#7C3AED" /> })}
+            </>)
+          })()}
         </ModalWrap>
       )}
 
@@ -578,11 +612,56 @@ export default function Dashboard({ setPage = () => {} }) {
           {permutaPeriodo > 0 && <RowItem label="+ Permuta (valor)" value={formatBRL(permutaPeriodo)} color="#7C3AED" sub="não entra no caixa" />}
           {comissoesDoPeriodo > 0 && <RowItem label="+ Comissões recebidas" value={formatBRL(comissoesDoPeriodo)} color="#0A5C42" />}
           {trocasDoPeriodo > 0 && <RowItem label="+ Trocas de placa recebidas" value={formatBRL(trocasDoPeriodo)} color="#7C3AED" />}
-          <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Parcelas por mês:</div>
-          {mesesPeriodo.map(m => {
+          <div style={{ marginTop: 16, borderTop: '1px solid #e6e9f0', paddingTop: 12, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Detalhamento por mês:</div>
+          {mesesGrafico.filter(m => m.valor > 0).map(m => {
             const label = new Date(m.ano, m.mes-1, 1).toLocaleDateString('pt-BR', {month:'short', year:'numeric'})
-            return <RowItem key={label} label={label} value={formatBRL(m.valor)} />
+            const parcsDoMes = dados.parcelas.filter(p => {
+              if (!['paga','pago'].includes(p.status)) return false
+              if (contratoForma.get(p.contrato_id) === 'permuta') return false
+              const d = p.data_pagamento || p.data_vencimento
+              if (!d) return false
+              const dt = new Date(d + 'T00:00:00')
+              return dt.getFullYear() === m.ano && (dt.getMonth()+1) === m.mes
+            })
+            const trocasDoMes = trocasListPeriodo.filter(c => {
+              const d = c.data_pagamento || c.data_inicio
+              if (!d) return false
+              const dt = new Date(d + 'T00:00:00')
+              return dt.getFullYear() === m.ano && (dt.getMonth()+1) === m.mes
+            })
+            const comissoesDoMes = comissoesListPeriodo.filter(c => {
+              const d = c.data_pagamento || c.data_inicio
+              if (!d) return false
+              const dt = new Date(d + 'T00:00:00')
+              return dt.getFullYear() === m.ano && (dt.getMonth()+1) === m.mes
+            })
+            return (
+              <div key={label} style={{ marginBottom: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginTop: 10, marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{label}</span><span>{formatBRL(m.valor)}</span>
+                </div>
+                {parcsDoMes.map(p => {
+                  const cont = dados.contratos.find(c => c.id === p.contrato_id)
+                  return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)} · aluguel`} value={formatBRL(p.valor)} />
+                })}
+                {trocasDoMes.map(c => (
+                  <RowItem key={c.id} label={c.clientes?.nome || c.descricao || 'Troca'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)} · troca de placa`} value={formatBRL(c.valor_recebido_troca)} color="#7C3AED" />
+                ))}
+                {comissoesDoMes.map(c => (
+                  <RowItem key={c.id} label={c.clientes?.nome || c.descricao || 'Comissão'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)} · comissão`} value={formatBRL(c.valor_comissao)} color="#0A5C42" />
+                ))}
+              </div>
+            )
           })}
+          {permutaListPeriodo.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', marginBottom: 4 }}>Permuta (não entra no caixa)</div>
+              {permutaListPeriodo.map(p => {
+                const cont = dados.contratos.find(c => c.id === p.contrato_id)
+                return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)}`} value={formatBRL(p.valor)} color="#7C3AED" />
+              })}
+            </div>
+          )}
         </ModalWrap>
       )}
 
@@ -656,7 +735,7 @@ export default function Dashboard({ setPage = () => {} }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20 }}>
         <section style={{ background: C.surface, borderRadius: 14, padding: '22px 24px', boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)' }}>
-          <BarChart meses={mesesPeriodo} />
+          <BarChart meses={mesesGrafico} />
         </section>
         <section style={{ background: C.surface, borderRadius: 14, padding: '22px 24px', boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)' }}>
           <DonutChart ativas={placasAtivas} disponiveis={placasDisp} manutencao={placasManut} />
