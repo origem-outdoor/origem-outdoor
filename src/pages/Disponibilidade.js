@@ -124,19 +124,37 @@ export default function Disponibilidade({ setPage }) {
   const canSearch = !!(periodoAtual.inicio && periodoAtual.fim)
 
   const getContratoConflito = (placa, pIni, pFim) => {
+    // Coleta TODOS os conflitos e retorna o mais relevante:
+    // 1º ativo hoje, 2º mais recente (maior data_inicio)
+    const hoje = new Date().toISOString().split('T')[0]
+    let melhor = null
     for (const c of contratos) {
       const cpEntries = (c.contrato_placas || []).filter(cp => cp.placa_id === placa.id)
       if (cpEntries.length > 0) {
         for (const cp of cpEntries) {
           const cIni = cp.data_inicio || c.data_inicio
           const cFim = cp.data_fim || c.data_fim
-          if (cIni <= pFim && cFim >= pIni) return { contrato: c, cFim }
+          if (cIni <= pFim && cFim >= pIni) {
+            const candidato = { contrato: c, cFim, cIni }
+            if (!melhor) { melhor = candidato; continue }
+            const ativoAgora = cIni <= hoje && cFim >= hoje
+            const melhorAtivoAgora = melhor.cIni <= hoje && melhor.cFim >= hoje
+            if (ativoAgora && !melhorAtivoAgora) melhor = candidato
+            else if (ativoAgora === melhorAtivoAgora && cIni > melhor.cIni) melhor = candidato
+          }
         }
       } else if (c.placa_id === placa.id) {
-        if (c.data_inicio <= pFim && c.data_fim >= pIni) return { contrato: c, cFim: c.data_fim }
+        if (c.data_inicio <= pFim && c.data_fim >= pIni) {
+          const candidato = { contrato: c, cFim: c.data_fim, cIni: c.data_inicio }
+          if (!melhor) { melhor = candidato; continue }
+          const ativoAgora = c.data_inicio <= hoje && c.data_fim >= hoje
+          const melhorAtivoAgora = melhor.cIni <= hoje && melhor.cFim >= hoje
+          if (ativoAgora && !melhorAtivoAgora) melhor = candidato
+          else if (ativoAgora === melhorAtivoAgora && c.data_inicio > melhor.cIni) melhor = candidato
+        }
       }
     }
-    return null
+    return melhor
   }
 
   // Retorna o próximo contrato que começa APÓS aposData para esta placa
