@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatBRL, formatDate, diasRestantes } from '../components/UI'
 
@@ -27,6 +27,7 @@ const IcoDollar    = () => <svg width={18} height={18} viewBox="0 0 24 24" fill=
 const IcoTrend     = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>
 const IcoBoard     = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="11" rx="1.5"/><path d="M8 15v6M16 15v6M6 21h4M14 21h4"/></svg>
 const IcoUsers     = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/></svg>
+const IcoX         = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
 const IcoAlert     = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
 const IcoBars      = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
 const IcoPlus      = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -91,15 +92,20 @@ function PeriodoPicker({ valor, onChange }) {
   )
 }
 
-function KpiCard({ icon, label, value, sub, blue = false, bar = null }) {
+function KpiCard({ icon, label, value, sub, blue = false, bar = null, onClick = null, highlight = false }) {
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       background: blue ? C.primary : C.surface,
       color: blue ? '#fff' : C.text,
       borderRadius: 14, padding: 18,
       boxShadow: blue ? '0 4px 16px rgba(21,101,192,0.25)' : '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)',
       display: 'flex', flexDirection: 'column', gap: 12,
-    }}>
+      cursor: onClick ? 'pointer' : 'default',
+      transition: 'transform 0.1s, box-shadow 0.1s',
+    }}
+    onMouseEnter={onClick ? e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow = blue ? '0 8px 24px rgba(21,101,192,0.35)' : '0 4px 20px rgba(16,24,40,0.12)' } : undefined}
+    onMouseLeave={onClick ? e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow = blue ? '0 4px 16px rgba(21,101,192,0.25)' : '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)' } : undefined}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{
           width: 36, height: 36, borderRadius: 10, flexShrink: 0,
@@ -233,20 +239,22 @@ function DonutChart({ ativas, disponiveis, manutencao }) {
 
 export default function Dashboard({ setPage = () => {} }) {
   const navigate = (page) => setPage(page)
-  const [dados, setDados] = useState({ placas: [], contratos: [], clientes: [], parcelas: [] })
+  const [dados, setDados] = useState({ placas: [], contratos: [], clientes: [], parcelas: [], comissoes: [] })
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState(6)
+  const [modal, setModal] = useState(null) // null | 'contratos' | 'receita' | 'faturamento' | 'placas' | 'liquida'
   const hoje = new Date()
 
   useEffect(() => {
     async function carregar() {
-      const [p, c, cl, par] = await Promise.all([
+      const [p, c, cl, par, com] = await Promise.all([
         supabase.from('placas').select('*'),
-        supabase.from('contratos').select('*, placas(nome, status), clientes(nome), contrato_placas(placa_id)').order('data_inicio', { ascending: false }),
+        supabase.from('contratos').select('*, placas(nome, status), clientes(nome), contrato_placas(placa_id, placas(nome))').order('data_inicio', { ascending: false }),
         supabase.from('clientes').select('*'),
         supabase.from('parcelas').select('*'),
+        supabase.from('comissoes').select('*'),
       ])
-      setDados({ placas: p.data || [], contratos: c.data || [], clientes: cl.data || [], parcelas: par.data || [] })
+      setDados({ placas: p.data || [], contratos: c.data || [], clientes: cl.data || [], parcelas: par.data || [], comissoes: com.data || [] })
       setLoading(false)
     }
     carregar()
@@ -264,30 +272,124 @@ export default function Dashboard({ setPage = () => {} }) {
   // Contratos à vista devem gerar 1 parcela marcada como paga para aparecer aqui.
   const mesAtual = hoje.getMonth(), anoAtual = hoje.getFullYear()
 
-  const receitaMes = dados.parcelas.filter(p => {
-    if (p.status !== 'paga') return false
+  // Mapa contrato_id → forma_pagamento (para separar permuta de dinheiro)
+  const contratoForma = new Map(dados.contratos.map(c => [c.id, c.forma_pagamento]))
+
+  const parcelasPagasMes = dados.parcelas.filter(p => {
+    if (!['paga','pago'].includes(p.status)) return false
     const d = p.data_pagamento || p.data_vencimento
     if (!d) return false
     const dt = new Date(d + 'T00:00:00')
     return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
-  }).reduce((s, p) => s + (p.valor || 0), 0)
+  })
+
+  // Receita em dinheiro (caixa real)
+  const receitaMes = parcelasPagasMes
+    .filter(p => contratoForma.get(p.contrato_id) !== 'permuta')
+    .reduce((s, p) => s + (p.valor || 0), 0)
+
+  // Receita em permuta (troca — não entra no caixa)
+  const receitaPermutaMes = parcelasPagasMes
+    .filter(p => contratoForma.get(p.contrato_id) === 'permuta')
+    .reduce((s, p) => s + (p.valor || 0), 0)
+
+  // Custo proporcional por parcela paga: custoTotal ÷ totalParcelas
+  // Separado: custos de contratos em dinheiro vs em permuta
+  const calcCustosPropParcelas = (parcs) => {
+    const contratoInfo = new Map(
+      dados.contratos.map(c => {
+        const custoTotal = (Number(c.custo_colador) || 0) + (Number(c.custo_impressao) || 0) +
+          (Number(c.custo_terreno_proporcional) || 0) + (Number(c.custo_extra) || 0) + (Number(c.valor_imposto) || 0)
+        const totalParcelas = dados.parcelas.filter(p => p.contrato_id === c.id).length || 1
+        return [c.id, { custoTotal, totalParcelas }]
+      })
+    )
+    return parcs.reduce((s, p) => {
+      const info = contratoInfo.get(p.contrato_id)
+      if (!info) return s
+      return s + info.custoTotal / info.totalParcelas
+    }, 0)
+  }
+
+  const parcelasCaixaMes = parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) !== 'permuta')
+  const parcelasPermutaMes = parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) === 'permuta')
+
+  const custosDoMes = calcCustosPropParcelas(parcelasCaixaMes)         // custos de contratos em dinheiro
+  const custosPermutaMes = calcCustosPropParcelas(parcelasPermutaMes)  // custos de contratos em permuta (colagem + impressão)
+  const receitaLiquida = receitaMes - custosDoMes  // caixa sem comissões (usado internamente)
+
+  // Comissões recebidas no mês (tipo='comissao', status_pagamento='pago', data_pagamento no mês atual)
+  const comissaoDoMes = dados.comissoes
+    .filter(c => c.tipo !== 'troca_placa' && c.status_pagamento === 'pago')
+    .filter(c => {
+      const d = c.data_pagamento || c.data_inicio
+      if (!d) return false
+      const dt = new Date(d + 'T00:00:00')
+      return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
+    })
+    .reduce((s, c) => s + (c.valor_comissao || 0), 0)
+
+  // Custo de trocas de placa no mês
+  const custoTrocaDoMes = dados.comissoes
+    .filter(c => c.tipo === 'troca_placa')
+    .filter(c => {
+      const d = c.data_inicio
+      if (!d) return false
+      const dt = new Date(d + 'T00:00:00')
+      return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
+    })
+    .reduce((s, c) => s + (Number(c.custo_colagem)||0) + (Number(c.custo_impressao_troca)||0), 0)
+
+  const faturamentoTrocaDoMes = dados.comissoes
+    .filter(c => c.tipo === 'troca_placa' && c.status_pagamento === 'pago')
+    .filter(c => {
+      const d = c.data_pagamento || c.data_inicio
+      if (!d) return false
+      const dt = new Date(d + 'T00:00:00')
+      return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual
+    })
+    .reduce((s, c) => s + (Number(c.valor_recebido_troca)||0), 0)
+
+  // Receita líquida inclui comissões recebidas e valor recebido de trocas; custos incluem trocas
+  const receitaLiquidaTotal = receitaMes + comissaoDoMes + faturamentoTrocaDoMes - custosDoMes - custoTrocaDoMes
 
   // Parcelas atrasadas
   const parcelasAtrasadas = dados.parcelas.filter(p => {
-    if (p.status === 'paga' || p.status === 'cancelada') return false
+    if (['paga','pago'].includes(p.status) || p.status === 'cancelada') return false
     const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00') : null
     return venc && venc < hoje
   })
-  const totalPlacas      = dados.placas.length
-  // Ocupacao calculada pelos contratos ativos de hoje (nao depende do status da placa)
+  const totalPlacas = dados.placas.length
+  // Ocupação: para placas duplas, verificar se AMBAS as faces estão ocupadas
+  // (face 'AB' = dupla inteira; 'A' ou 'B' = apenas um lado — dupla só "ocupa" quando AB ou A+B juntas)
+  const facesEmUso = {} // { [placa_id]: Set of faces in use }
+  contratosAtivos
+    .filter(c => {
+      const inicio = c.data_inicio ? new Date(c.data_inicio + 'T00:00:00') : null
+      const fim    = c.data_fim    ? new Date(c.data_fim    + 'T23:59:59') : null
+      return inicio && fim && inicio <= hoje && fim >= hoje
+    })
+    .flatMap(c => {
+      const fromJoin = (c.contrato_placas || []).map(cp => ({ placa_id: cp.placa_id, face: cp.face || 'AB' })).filter(cp => cp.placa_id)
+      const fromLegacy = c.placa_id ? [{ placa_id: c.placa_id, face: 'AB' }] : []
+      return fromJoin.length > 0 ? fromJoin : fromLegacy
+    })
+    .forEach(({ placa_id, face }) => {
+      if (!facesEmUso[placa_id]) facesEmUso[placa_id] = new Set()
+      facesEmUso[placa_id].add(face)
+    })
   const placasComContratoAtivo = new Set(
-    contratosAtivos
-      .filter(c => {
-        const inicio = c.data_inicio ? new Date(c.data_inicio + 'T00:00:00') : null
-        const fim    = c.data_fim    ? new Date(c.data_fim    + 'T23:59:59') : null
-        return inicio && fim && inicio <= hoje && fim >= hoje
+    dados.placas
+      .filter(p => {
+        const faces = facesEmUso[p.id]
+        if (!faces) return false
+        if (p.tipo === 'dupla') {
+          // dupla: ocupada se face AB, ou se ambas A e B estão em uso
+          return faces.has('AB') || (faces.has('A') && faces.has('B'))
+        }
+        return faces.size > 0
       })
-      .map(c => c.placa_id)
+      .map(p => p.id)
   )
   const placasAtivas   = placasComContratoAtivo.size
   const placasManut    = dados.placas.filter(p => p.status === 'manutencao').length
@@ -303,7 +405,8 @@ export default function Dashboard({ setPage = () => {} }) {
       mapa[k] = { mes: d.getMonth()+1, ano: d.getFullYear(), valor: 0 }
     }
     dados.parcelas.forEach(p => {
-      if (p.status !== 'paga') return
+      if (!['paga','pago'].includes(p.status)) return
+      if (contratoForma.get(p.contrato_id) === 'permuta') return
       const d = p.data_pagamento || p.data_vencimento
       if (!d) return
       const dt = new Date(d + 'T00:00:00')
@@ -312,7 +415,33 @@ export default function Dashboard({ setPage = () => {} }) {
     })
     return Object.values(mapa)
   })()
-  const fatPeriodo = mesesPeriodo.reduce((s, m) => s + m.valor, 0)
+  // Início do período para filtrar comissoes/trocas
+  const inicioPeriodo = new Date(hoje.getFullYear(), hoje.getMonth() - (periodo - 1), 1)
+  const comissoesDoPeriodo = dados.comissoes
+    .filter(c => c.tipo !== 'troca_placa' && c.status_pagamento === 'pago')
+    .filter(c => {
+      const d = c.data_pagamento || c.data_inicio
+      if (!d) return false
+      return new Date(d + 'T00:00:00') >= inicioPeriodo
+    })
+    .reduce((s, c) => s + (c.valor_comissao || 0), 0)
+  const trocasDoPeriodo = dados.comissoes
+    .filter(c => c.tipo === 'troca_placa' && c.status_pagamento === 'pago')
+    .filter(c => {
+      const d = c.data_pagamento || c.data_inicio
+      if (!d) return false
+      return new Date(d + 'T00:00:00') >= inicioPeriodo
+    })
+    .reduce((s, c) => s + (Number(c.valor_recebido_troca) || 0), 0)
+  const permutaPeriodo = dados.parcelas
+    .filter(p => ['paga','pago'].includes(p.status) && contratoForma.get(p.contrato_id) === 'permuta')
+    .filter(p => {
+      const d = p.data_pagamento || p.data_vencimento
+      if (!d) return false
+      return new Date(d + 'T00:00:00') >= inicioPeriodo
+    })
+    .reduce((s, p) => s + (p.valor || 0), 0)
+  const fatPeriodo = mesesPeriodo.reduce((s, m) => s + m.valor, 0) + permutaPeriodo + comissoesDoPeriodo + trocasDoPeriodo
 
   const vencendo5 = contratosAtivos
     .filter(c => { const d = diasRestantes(c.data_fim); return d !== null && d >= 0 && d <= 7 })
@@ -382,8 +511,102 @@ export default function Dashboard({ setPage = () => {} }) {
     </div>
   )
 
+  // ── Modal helper ──────────────────────────────────────────────
+  const closeModal = () => setModal(null)
+
+  const ModalWrap = ({ title, children }) => (
+    <div onClick={closeModal} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 560, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #EEF1F6' }}>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#1A2233' }}>{title}</h2>
+          <button onClick={closeModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5B6577', padding: 4 }}><IcoX /></button>
+        </div>
+        <div style={{ overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+
+  const RowItem = ({ label, value, sub, color }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #EEF1F6' }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#1A2233' }}>{label}</div>
+        {sub && <div style={{ fontSize: 12, color: '#5B6577', marginTop: 2 }}>{sub}</div>}
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: color || '#1A2233', textAlign: 'right' }}>{value}</div>
+    </div>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontFamily: "'Manrope','Inter',system-ui,sans-serif" }}>
+
+      {/* ── Modais de detalhe ── */}
+      {modal === 'contratos' && (
+        <ModalWrap title="Contratos Ativos">
+          {contratosAtivos.length === 0 && <p style={{ color: '#aaa', fontSize: 14 }}>Nenhum contrato ativo.</p>}
+          {contratosAtivos.map(c => (
+            <RowItem key={c.id}
+              label={c.clientes?.nome || '-'}
+              sub={(c.contrato_placas || []).map(cp => cp.placas?.nome).filter(Boolean).join(' / ') || c.placas?.nome || '-'}
+              value={formatBRL(c.valor_total)}
+            />
+          ))}
+          <RowItem label="Total" value={formatBRL(contratosAtivos.reduce((s,c) => s+(c.valor_total||0),0))} color="#1565C0" />
+        </ModalWrap>
+      )}
+
+      {modal === 'receita' && (
+        <ModalWrap title={`Receita de ${new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}`}>
+          <RowItem label="Parcelas pagas (caixa)" value={formatBRL(receitaMes)} sub={`${parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) !== 'permuta').length} parcela(s)`} />
+          {comissaoDoMes > 0 && <RowItem label="Comissões recebidas" value={formatBRL(comissaoDoMes)} color="#0A5C42" />}
+          {faturamentoTrocaDoMes > 0 && <RowItem label="Trocas de placa (recebido)" value={formatBRL(faturamentoTrocaDoMes)} color="#7C3AED" />}
+          {receitaPermutaMes > 0 && <RowItem label="Permuta (valor)" value={formatBRL(receitaPermutaMes)} color="#7C3AED" sub="não entra no caixa" />}
+          <RowItem label="Total do mês" value={formatBRL(receitaMes + comissaoDoMes + faturamentoTrocaDoMes)} color="#1565C0" />
+          <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Parcelas pagas este mês:</div>
+          {parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) !== 'permuta').map(p => {
+            const cont = dados.contratos.find(c => c.id === p.contrato_id)
+            return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`venc. ${formatDate(p.data_vencimento)}`} value={formatBRL(p.valor)} />
+          })}
+        </ModalWrap>
+      )}
+
+      {modal === 'faturamento' && (
+        <ModalWrap title={`Faturamento — últimos ${periodo} meses`}>
+          <RowItem label="Total acumulado" value={formatBRL(fatPeriodo)} color="#1565C0" />
+          <RowItem label="Parcelas pagas (caixa)" value={formatBRL(mesesPeriodo.reduce((s,m)=>s+m.valor,0))} />
+          {permutaPeriodo > 0 && <RowItem label="+ Permuta (valor)" value={formatBRL(permutaPeriodo)} color="#7C3AED" sub="não entra no caixa" />}
+          {comissoesDoPeriodo > 0 && <RowItem label="+ Comissões recebidas" value={formatBRL(comissoesDoPeriodo)} color="#0A5C42" />}
+          {trocasDoPeriodo > 0 && <RowItem label="+ Trocas de placa recebidas" value={formatBRL(trocasDoPeriodo)} color="#7C3AED" />}
+          <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Parcelas por mês:</div>
+          {mesesPeriodo.map(m => {
+            const label = new Date(m.ano, m.mes-1, 1).toLocaleDateString('pt-BR', {month:'short', year:'numeric'})
+            return <RowItem key={label} label={label} value={formatBRL(m.valor)} />
+          })}
+        </ModalWrap>
+      )}
+
+      {modal === 'placas' && (
+        <ModalWrap title="Placas Disponíveis">
+          <RowItem label="Disponíveis" value={`${placasDisp} de ${totalPlacas}`} color="#1565C0" />
+          <RowItem label="Em uso (contratos ativos)" value={totalPlacas - placasDisp} />
+          <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Placas disponíveis agora:</div>
+          {dados.placas.filter(pl => !placasComContratoAtivo.has(pl.id)).map(pl => (
+            <RowItem key={pl.id} label={pl.nome} sub={pl.tipo || ''} value="Livre" color="#166534" />
+          ))}
+        </ModalWrap>
+      )}
+
+      {modal === 'liquida' && (
+        <ModalWrap title="Receita Líquida do Mês">
+          <RowItem label="Receita bruta (caixa)" value={formatBRL(receitaMes)} />
+          {comissaoDoMes > 0 && <RowItem label="+ Comissões" value={formatBRL(comissaoDoMes)} color="#0A5C42" />}
+          {faturamentoTrocaDoMes > 0 && <RowItem label="+ Trocas recebidas" value={formatBRL(faturamentoTrocaDoMes)} color="#7C3AED" />}
+          <RowItem label="− Custos (colagem, impressão, terreno)" value={formatBRL(custosDoMes)} color="#C2410C" />
+          {custoTrocaDoMes > 0 && <RowItem label="− Custo trocas de placa" value={formatBRL(custoTrocaDoMes)} color="#C2410C" />}
+          <RowItem label="= Receita Líquida" value={formatBRL(receitaLiquidaTotal)} color={receitaLiquidaTotal >= 0 ? '#166534' : '#C2410C'} />
+        </ModalWrap>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
@@ -412,11 +635,23 @@ export default function Dashboard({ setPage = () => {} }) {
       {BannerParcelas}
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
-        <KpiCard icon={<IcoContract />} label="Contratos Ativos" value={contratosAtivos.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> em relacao ao mes passado</>} />
-        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes)} sub={<>parcelas pagas em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}</>} />
-        <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue />
-        <KpiCard icon={<IcoBoard />}    label="Placas Disponiveis" value={<>{placasDisp} <span style={{ fontSize: 15, fontWeight: 600, color: C.textLight }}>de {totalPlacas}</span></>} bar={pctDisp} />
-        <KpiCard icon={<IcoUsers />}    label="Clientes Cadastrados" value={dados.clientes.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> novos este mes</>} />
+        <KpiCard icon={<IcoContract />} label="Contratos Ativos" value={contratosAtivos.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> em relacao ao mes passado</>} onClick={() => setModal('contratos')} />
+        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes + comissaoDoMes)} onClick={() => setModal('receita')}
+          sub={<>
+            parcelas + comissões em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}
+            {comissaoDoMes > 0 && <span style={{ display: 'block', color: '#0A5C42', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(comissaoDoMes)} comissões</span>}
+            {faturamentoTrocaDoMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(faturamentoTrocaDoMes)} trocas</span>}
+            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(receitaPermutaMes)} em permuta</span>}
+          </>} />
+        <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue onClick={() => setModal('faturamento')} />
+        <KpiCard icon={<IcoBoard />}    label="Placas Disponiveis" value={<>{placasDisp} <span style={{ fontSize: 15, fontWeight: 600, color: C.textLight }}>de {totalPlacas}</span></>} bar={pctDisp} onClick={() => setModal('placas')} />
+        <KpiCard icon={<IcoDollar />}   label="Receita Líquida" value={formatBRL(receitaLiquidaTotal)} onClick={() => setModal('liquida')}
+          sub={<>
+            <span style={{ color: C.textLight }}>receita + comissões − custos − trocas</span>
+            {custoTrocaDoMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>− {formatBRL(custoTrocaDoMes)} trocas de placa</span>}
+            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>Permuta: {formatBRL(receitaPermutaMes - custosPermutaMes)} líq.</span>}
+          </>}
+          highlight={receitaLiquidaTotal > 0} />
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20 }}>
@@ -450,7 +685,10 @@ export default function Dashboard({ setPage = () => {} }) {
                 {recentes.map((c, i) => (
                   <tr key={c.id} style={{ borderBottom: i < recentes.length-1 ? `1px solid ${C.borderLight}` : 'none' }}>
                     <td style={{ padding: '13px 8px', fontWeight: 600, color: C.text }}>{c.clientes?.nome || '-'}</td>
-                    <td style={{ padding: '13px 8px', color: C.textMed }}>{c.placas?.nome || '-'}</td>
+                    <td style={{ padding: '13px 8px', color: C.textMed }}>{(() => {
+                      const names = (c.contrato_placas || []).map(cp => cp.placas?.nome).filter(Boolean)
+                      return names.length > 0 ? names.join(' / ') : (c.placas?.nome || '-')
+                    })()}</td>
                     <td style={{ padding: '13px 8px', textAlign: 'right', fontWeight: 600, color: C.text }}>{formatBRL(c.valor_total)}</td>
                     <td style={{ padding: '13px 8px' }}><StatusBadge status={statusExibicao(c)} /></td>
                     <td style={{ padding: '13px 8px', color: C.textMed }}>{formatDate(c.data_fim)}</td>
