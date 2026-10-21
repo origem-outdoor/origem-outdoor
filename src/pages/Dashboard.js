@@ -715,7 +715,7 @@ export default function Dashboard({ setPage = () => {} }) {
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
         <KpiCard icon={<IcoContract />} label="Contratos Ativos" value={contratosAtivos.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> em relacao ao mes passado</>} onClick={() => setModal('contratos')} />
-        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes + comissaoDoMes)} onClick={() => setModal('receita')}
+        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes + comissaoDoMes + faturamentoTrocaDoMes)} onClick={() => setModal('receita')}
           sub={<>
             parcelas + comissões em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}
             {comissaoDoMes > 0 && <span style={{ display: 'block', color: '#0A5C42', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(comissaoDoMes)} comissões</span>}
