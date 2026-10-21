@@ -32,6 +32,8 @@ function addDays(dateStr, days) {
   return d.toISOString().split('T')[0]
 }
 
+const MIN_LOCACAO_DIAS = 14  // janela mínima para locação (dias corridos)
+
 const STATUS_LABEL = {
   livre:      { emoji: '✅', label: 'Livre',      bg: '#E8F5E9', text: '#2E7D32', border: '#A5D6A7' },
   reservada:  { emoji: '🔵', label: 'Reservada',  bg: '#EDE7F6', text: '#5E35B1', border: '#C5B8EF' },
@@ -56,9 +58,17 @@ function PlacaCard({ p, onCreateContrato }) {
         <span style={{ fontSize: 22 }}>{isPreste ? '⏳' : st.emoji}</span>
       </div>
       <div style={{ display: 'inline-flex', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,0.6)', color: cardText, border: `1px solid ${cardBorder}`, marginBottom: 10 }}>
-        {isPreste ? `${st.label} · libera ${new Date(p.cFim + 'T00:00:00').toLocaleDateString('pt-BR')}` : st.label}
+        {p.semJanela
+          ? `🔵 Janela insuficiente · próx. contrato ${new Date(p.proximaData + 'T00:00:00').toLocaleDateString('pt-BR')}`
+          : isPreste ? `${st.label} · libera ${new Date(p.cFim + 'T00:00:00').toLocaleDateString('pt-BR')}` : st.label}
       </div>
-      {p.contrato && (
+      {p.semJanela && (
+        <div style={{ fontSize: 12, background: 'rgba(255,255,255,0.5)', borderRadius: 8, padding: '6px 10px', marginBottom: 8, color: '#5E35B1' }}>
+          <div style={{ fontWeight: 700 }}>⚠️ Apenas {p.diasLivres} dia{p.diasLivres !== 1 ? 's' : ''} livre{p.diasLivres !== 1 ? 's' : ''} (mín. {MIN_LOCACAO_DIAS})</div>
+          <div style={{ opacity: 0.85 }}>Próx. reserva: {new Date(p.proximaData + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
+        </div>
+      )}
+      {!p.semJanela && p.contrato && (
         <div style={{ fontSize: 12, color: cardText, opacity: 0.85, marginBottom: 8 }}>
           {p.contrato.clientes?.nome && <div>👤 {p.contrato.clientes.nome}</div>}
           <div>📅 {new Date(p.contrato.data_inicio + 'T00:00:00').toLocaleDateString('pt-BR')} → {new Date(p.cFim + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
@@ -129,10 +139,54 @@ export default function Disponibilidade({ setPage }) {
     return null
   }
 
+  // Retorna o próximo contrato que começa APÓS aposData para esta placa
+  const getProximoContratoApos = (placa, aposData) => {
+    let proximo = null
+    for (const c of contratos) {
+      const cpEntries = (c.contrato_placas || []).filter(cp => cp.placa_id === placa.id)
+      if (cpEntries.length > 0) {
+        for (const cp of cpEntries) {
+          const cIni = cp.data_inicio || c.data_inicio
+          const cFim = cp.data_fim || c.data_fim
+          if (cIni > aposData && (!proximo || cIni < proximo.data_inicio)) {
+            proximo = { contrato: c, data_inicio: cIni, data_fim: cFim }
+          }
+        }
+      } else if (c.placa_id === placa.id && c.data_inicio > aposData) {
+        if (!proximo || c.data_inicio < proximo.data_inicio) {
+          proximo = { contrato: c, data_inicio: c.data_inicio, data_fim: c.data_fim }
+        }
+      }
+    }
+    return proximo
+  }
+
   const getStatusPlaca = (placa, pIni, pFim) => {
     if (placa.status === 'manutencao') return { tipo: 'manutencao', contrato: null, cFim: null }
     const conflito = getContratoConflito(placa, pIni, pFim)
-    if (!conflito) return { tipo: 'livre', contrato: null, cFim: null }
+    if (!conflito) {
+      // Placa livre no período — verifica se tem janela mínima de MIN_LOCACAO_DIAS
+      const hoje = new Date().toISOString().split('T')[0]
+      const ref = pIni > hoje ? pIni : hoje   // referência: mais tarde entre hoje e início do período
+      const proximo = getProximoContratoApos(placa, pFim)
+      if (proximo) {
+        const diasLivres = Math.round(
+          (new Date(proximo.data_inicio + 'T00:00:00') - new Date(ref + 'T00:00:00')) / 86400000
+        )
+        if (diasLivres < MIN_LOCACAO_DIAS) {
+          // Janela insuficiente — trata como reservada
+          return {
+            tipo: 'reservada',
+            contrato: proximo.contrato,
+            cFim: proximo.data_fim,
+            proximaData: proximo.data_inicio,
+            diasLivres,
+            semJanela: true,
+          }
+        }
+      }
+      return { tipo: 'livre', contrato: null, cFim: null }
+    }
     const hoje = new Date().toISOString().split('T')[0]
     const tipo = conflito.contrato.data_inicio > hoje ? 'reservada' : 'ocupada'
     return { tipo, contrato: conflito.contrato, cFim: conflito.cFim }
