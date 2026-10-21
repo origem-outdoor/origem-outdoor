@@ -32,6 +32,21 @@ export function Clientes() {
     setModal(c ? 'editar' : 'novo')
   }
 
+  const salvarClienteRapido = async () => {
+    if (!novoCliente.nome.trim()) { alert('Informe o nome do cliente.'); return }
+    setSalvandoCliente(true)
+    const { data, error } = await supabase.from('clientes').insert({
+      nome: novoCliente.nome.trim(),
+      telefone: novoCliente.telefone.trim() || null,
+    }).select('id, nome').single()
+    if (error || !data) { alert('Erro ao cadastrar cliente.'); setSalvandoCliente(false); return }
+    setClientes(prev => [...prev, data].sort((a, b) => a.nome.localeCompare(b.nome)))
+    set('cliente_id', data.id)
+    setNovoCliente({ nome: '', telefone: '' })
+    setCriandoCliente(false)
+    setSalvandoCliente(false)
+  }
+
   const salvar = async () => {
     setSalvando(true)
     const payload = { ...form }
@@ -147,6 +162,9 @@ export function Comissoes() {
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(FORM_COM)
   const [salvando, setSalvando] = useState(false)
+  const [novoCliente, setNovoCliente] = useState({ nome: '', telefone: '' })
+  const [criandoCliente, setCriandoCliente] = useState(false)
+  const [salvandoCliente, setSalvandoCliente] = useState(false)
 
   const carregar = async () => {
     const [co, cl] = await Promise.all([
@@ -164,6 +182,8 @@ export function Comissoes() {
   const abrir = (c = null) => {
     setForm(c ? { ...c } : FORM_COM)
     setModal(c ? 'editar' : 'novo')
+    setCriandoCliente(false)
+    setNovoCliente({ nome: '', telefone: '' })
   }
 
   const salvar = async () => {
@@ -219,7 +239,7 @@ export function Comissoes() {
                 </div>
                 <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                   {c.tipo === 'troca_placa' ? (
-                    <>Proprietário: {c.proprietario_placa || '-'} · Custo colagem: {formatBRL(c.custo_colagem)} · Impressão: {formatBRL(c.custo_impressao_troca)}{Number(c.valor_recebido_troca) > 0 && <> · Recebido: {formatBRL(c.valor_recebido_troca)}</>}{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
+                    <>{c.clientes?.nome && <span>{c.clientes.nome} · </span>}Proprietário: {c.proprietario_placa || '-'} · Custo colagem: {formatBRL(c.custo_colagem)} · Impressão: {formatBRL(c.custo_impressao_troca)}{Number(c.valor_recebido_troca) > 0 && <> · Recebido: {formatBRL(c.valor_recebido_troca)}</>}{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
                   ) : (
                     <>{c.clientes?.nome && <span>{c.clientes.nome} · </span>}Negociado: {formatBRL(c.valor_negociado)} · {c.percentual_comissao}% = {formatBRL(c.valor_comissao)}{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
                   )}
@@ -251,6 +271,35 @@ export function Comissoes() {
           <Input label="Descrição" value={form.descricao} onChange={v => set('descricao', v)} required />
           {form.tipo === 'troca_placa' ? (
             <>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>CLIENTE</label>
+                  {!criandoCliente && (
+                    <button type="button" onClick={() => setCriandoCliente(true)} style={{
+                      fontSize: 11, color: '#1a1a18', background: 'none', border: 'none',
+                      cursor: 'pointer', fontWeight: 600, textDecoration: 'underline', padding: 0
+                    }}>+ Cadastrar novo</button>
+                  )}
+                </div>
+                {criandoCliente ? (
+                  <div style={{ background: '#F7F6F2', borderRadius: 10, padding: 12, border: '1.5px solid #ddd' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>NOVO CLIENTE RÁPIDO</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+                      <Input label="Nome *" value={novoCliente.nome} onChange={v => setNovoCliente(prev => ({ ...prev, nome: v }))} />
+                      <Input label="Telefone" value={novoCliente.telefone} onChange={v => setNovoCliente(prev => ({ ...prev, telefone: v }))} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <Btn onClick={salvarClienteRapido} disabled={salvandoCliente} size="sm">{salvandoCliente ? 'Salvando...' : 'Salvar cliente'}</Btn>
+                      <Btn onClick={() => { setCriandoCliente(false); setNovoCliente({ nome: '', telefone: '' }) }} variant="secondary" size="sm">Cancelar</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <Select label="" value={form.cliente_id || ''} onChange={v => set('cliente_id', v)} options={[
+                    { value: '', label: 'Sem cliente (preencher depois)' },
+                    ...clientes.map(c => ({ value: c.id, label: c.nome }))
+                  ]} />
+                )}
+              </div>
               <Input label="Proprietário da placa (ex: Cícero)" value={form.proprietario_placa || ''} onChange={v => set('proprietario_placa', v)} />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                 <Input label="Custo de colagem (R$)" value={form.custo_colagem || 0} onChange={v => set('custo_colagem', Number(v))} type="number" />
@@ -274,8 +323,35 @@ export function Comissoes() {
             </>
           ) : (
             <>
-              <Select label="Cliente" value={form.cliente_id || ''} onChange={v => set('cliente_id', v)}
-                options={clientes.map(c => ({ value: c.id, label: c.nome }))} />
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>CLIENTE</label>
+                  {!criandoCliente && (
+                    <button type="button" onClick={() => setCriandoCliente(true)} style={{
+                      fontSize: 11, color: '#1a1a18', background: 'none', border: 'none',
+                      cursor: 'pointer', fontWeight: 600, textDecoration: 'underline', padding: 0
+                    }}>+ Cadastrar novo</button>
+                  )}
+                </div>
+                {criandoCliente ? (
+                  <div style={{ background: '#F7F6F2', borderRadius: 10, padding: 12, border: '1.5px solid #ddd' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>NOVO CLIENTE RÁPIDO</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+                      <Input label="Nome *" value={novoCliente.nome} onChange={v => setNovoCliente(prev => ({ ...prev, nome: v }))} />
+                      <Input label="Telefone" value={novoCliente.telefone} onChange={v => setNovoCliente(prev => ({ ...prev, telefone: v }))} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <Btn onClick={salvarClienteRapido} disabled={salvandoCliente} size="sm">{salvandoCliente ? 'Salvando...' : 'Salvar cliente'}</Btn>
+                      <Btn onClick={() => { setCriandoCliente(false); setNovoCliente({ nome: '', telefone: '' }) }} variant="secondary" size="sm">Cancelar</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <Select label="" value={form.cliente_id || ''} onChange={v => set('cliente_id', v)} options={[
+                    { value: '', label: 'Sem cliente (preencher depois)' },
+                    ...clientes.map(c => ({ value: c.id, label: c.nome }))
+                  ]} />
+                )}
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                 <Input label="Valor total negociado (R$)" value={form.valor_negociado} onChange={v => set('valor_negociado', Number(v))} type="number" />
                 <Input label="Comissão (%)" value={form.percentual_comissao} onChange={v => set('percentual_comissao', Number(v))} type="number" />
