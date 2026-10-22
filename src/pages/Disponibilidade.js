@@ -217,7 +217,7 @@ export default function Disponibilidade({ setPage }) {
     ? placas.map(p => ({ ...p, tipo_placa: p.tipo, ...getStatusPlaca(p, pIni, pFim) }))
     : []
 
-  const dataLimite5 = pFim ? addDays(pFim, 5) : ''
+  const dataLimite5 = pIni ? addDays(pIni, 5) : ''  // 5 dias a partir do INÍCIO do período
 
   const livres     = placasComStatus.filter(p => p.tipo === 'livre')
   const manutencao = placasComStatus.filter(p => p.tipo === 'manutencao')
@@ -338,7 +338,7 @@ export default function Disponibilidade({ setPage }) {
             <section style={{ marginBottom: 32 }}>
               <h3 style={{ fontSize: 15, fontWeight: 700, color: '#B45309', marginBottom: 6 }}>⏳ Ficam livres em até 5 dias ({prestesALiberar.length})</h3>
               <p style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
-                Ocupadas no período, mas o contrato termina até {dataLimite5 ? new Date(dataLimite5 + 'T00:00:00').toLocaleDateString('pt-BR') : ''}.
+                Contrato termina até {dataLimite5 ? new Date(dataLimite5 + 'T00:00:00').toLocaleDateString('pt-BR') : ''} — até 5 dias após o início do período.
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
                 {prestesALiberar.map(p => <PlacaCard key={p.id} p={p} />)}
