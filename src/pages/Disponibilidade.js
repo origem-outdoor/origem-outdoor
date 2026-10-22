@@ -1,26 +1,60 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { PageHeader, Btn, COLORS } from '../components/UI'
+import { PageHeader, COLORS } from '../components/UI'
 
-// Gera lista de bi-semanas do ano atual
+// Calendário oficial Central de Outdoor Bahia 2026
+// Numeração NN/26 (apenas pares): 02/26 a 52/26
+const BISEMANAS_2026 = [
+  { num: '02/26', inicio: '2025-12-27', fim: '2026-01-09' },
+  { num: '04/26', inicio: '2026-01-10', fim: '2026-01-23' },
+  { num: '06/26', inicio: '2026-01-24', fim: '2026-02-06' },
+  { num: '08/26', inicio: '2026-02-07', fim: '2026-02-20' },
+  { num: '10/26', inicio: '2026-02-21', fim: '2026-03-06' },
+  { num: '12/26', inicio: '2026-03-07', fim: '2026-03-20' },
+  { num: '14/26', inicio: '2026-03-21', fim: '2026-04-03' },
+  { num: '16/26', inicio: '2026-04-04', fim: '2026-04-17' },
+  { num: '18/26', inicio: '2026-04-18', fim: '2026-05-01' },
+  { num: '20/26', inicio: '2026-05-02', fim: '2026-05-15' },
+  { num: '22/26', inicio: '2026-05-16', fim: '2026-05-29' },
+  { num: '24/26', inicio: '2026-05-30', fim: '2026-06-12' },
+  { num: '26/26', inicio: '2026-06-13', fim: '2026-06-26' },
+  { num: '28/26', inicio: '2026-06-27', fim: '2026-07-10' },
+  { num: '30/26', inicio: '2026-07-11', fim: '2026-07-24' },
+  { num: '32/26', inicio: '2026-07-25', fim: '2026-08-07' },
+  { num: '34/26', inicio: '2026-08-08', fim: '2026-08-21' },
+  { num: '36/26', inicio: '2026-08-22', fim: '2026-09-04' },
+  { num: '38/26', inicio: '2026-09-05', fim: '2026-09-18' },
+  { num: '40/26', inicio: '2026-09-19', fim: '2026-10-02' },
+  { num: '42/26', inicio: '2026-10-03', fim: '2026-10-16' },
+  { num: '44/26', inicio: '2026-10-17', fim: '2026-10-30' },
+  { num: '46/26', inicio: '2026-10-31', fim: '2026-11-13' },
+  { num: '48/26', inicio: '2026-11-14', fim: '2026-11-27' },
+  { num: '50/26', inicio: '2026-11-28', fim: '2026-12-11' },
+  { num: '52/26', inicio: '2026-12-12', fim: '2026-12-25' },
+].map(b => ({
+  ...b,
+  label: `Bi-semana ${b.num} — ${new Date(b.inicio + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${new Date(b.fim + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`,
+}))
+
 function gerarBisemanas(ano) {
+  if (ano === 2026) return BISEMANAS_2026
+  // Fallback algorítmico para outros anos
   const bises = []
-  let d = new Date(ano, 0, 1) // 1 jan
-  // Alinha para segunda-feira da primeira semana com dia do ano
+  let d = new Date(ano, 0, 1)
   while (d.getDay() !== 1) d.setDate(d.getDate() + 1)
-  let num = 1
+  let num = 2
   while (d.getFullYear() === ano) {
     const inicio = new Date(d)
     const fim = new Date(d)
-    fim.setDate(fim.getDate() + 13) // 14 dias
+    fim.setDate(fim.getDate() + 13)
     bises.push({
-      num,
-      label: `Bi-semana ${num} — ${inicio.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${fim.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`,
+      num: `${String(num).padStart(2, '0')}/${String(ano).slice(-2)}`,
+      label: `Bi-semana ${String(num).padStart(2, '0')}/${String(ano).slice(-2)} — ${inicio.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${fim.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`,
       inicio: inicio.toISOString().split('T')[0],
       fim: fim.toISOString().split('T')[0],
     })
     d.setDate(d.getDate() + 14)
-    num++
+    num += 2
   }
   return bises
 }
@@ -28,13 +62,71 @@ function gerarBisemanas(ano) {
 const ANO_ATUAL = new Date().getFullYear()
 const BISEMANAS = gerarBisemanas(ANO_ATUAL)
 
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
+const MIN_LOCACAO_DIAS = 14  // janela mínima para locação (dias corridos)
+
+const STATUS_LABEL = {
+  livre:      { emoji: '✅', label: 'Livre',      bg: '#E8F5E9', text: '#2E7D32', border: '#A5D6A7' },
+  reservada:  { emoji: '🔵', label: 'Reservada',  bg: '#EDE7F6', text: '#5E35B1', border: '#C5B8EF' },
+  ocupada:    { emoji: '🔴', label: 'Ocupada',    bg: '#FFEBEE', text: '#C62828', border: '#EF9A9A' },
+  manutencao: { emoji: '🔧', label: 'Manutenção', bg: '#FFF3E0', text: '#E65100', border: '#FFCC80' },
+}
+
+function PlacaCard({ p, onCreateContrato }) {
+  const st = STATUS_LABEL[p.tipo] || STATUS_LABEL.livre
+  const isPreste = p.preste
+  const cardBg = isPreste ? '#FFFBEB' : st.bg
+  const cardBorder = isPreste ? '#FCD34D' : st.border
+  const cardText = isPreste ? '#B45309' : st.text
+  return (
+    <div style={{ background: cardBg, borderRadius: 14, border: `1.5px solid ${cardBorder}`, padding: '16px 18px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a18' }}>{p.nome}</div>
+          <div style={{ fontSize: 12, color: '#888' }}>{p.tipo_placa === 'dupla' ? '18×3m dupla' : '9×3m simples'}</div>
+          {p.endereco && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{p.endereco}</div>}
+        </div>
+        <span style={{ fontSize: 22 }}>{isPreste ? '⏳' : st.emoji}</span>
+      </div>
+      <div style={{ display: 'inline-flex', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,0.6)', color: cardText, border: `1px solid ${cardBorder}`, marginBottom: 10 }}>
+        {p.semJanela
+          ? `🔵 Janela insuficiente · próx. contrato ${new Date(p.proximaData + 'T00:00:00').toLocaleDateString('pt-BR')}`
+          : isPreste ? `${st.label} · libera ${new Date(p.cFim + 'T00:00:00').toLocaleDateString('pt-BR')}` : st.label}
+      </div>
+      {p.semJanela && (
+        <div style={{ fontSize: 12, background: 'rgba(255,255,255,0.5)', borderRadius: 8, padding: '6px 10px', marginBottom: 8, color: '#5E35B1' }}>
+          <div style={{ fontWeight: 700 }}>⚠️ Apenas {p.diasLivres} dia{p.diasLivres !== 1 ? 's' : ''} livre{p.diasLivres !== 1 ? 's' : ''} (mín. {MIN_LOCACAO_DIAS})</div>
+          <div style={{ opacity: 0.85 }}>Próx. reserva: {new Date(p.proximaData + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
+        </div>
+      )}
+      {!p.semJanela && p.contrato && (
+        <div style={{ fontSize: 12, color: cardText, opacity: 0.85, marginBottom: 8 }}>
+          {p.contrato.clientes?.nome && <div>👤 {p.contrato.clientes.nome}</div>}
+          <div>📅 {new Date(p.contrato.data_inicio + 'T00:00:00').toLocaleDateString('pt-BR')} → {new Date(p.cFim + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
+        </div>
+      )}
+      {p.tipo === 'livre' && onCreateContrato && (
+        <button onClick={onCreateContrato} style={{
+          fontSize: 12, padding: '6px 14px', borderRadius: 8, border: 'none',
+          background: '#2E7D32', color: '#fff', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+        }}>+ Criar contrato</button>
+      )}
+    </div>
+  )
+}
+
 export default function Disponibilidade({ setPage }) {
   const [placas, setPlacas] = useState([])
   const [contratos, setContratos] = useState([])
   const [loading, setLoading] = useState(true)
-  const [modoConsulta, setModoConsulta] = useState('bisemana') // 'bisemana' | 'periodo'
-  const [bisemaanaSel, setBissemanaSel] = useState(() => {
-    // Seleciona a bi-semana atual
+  const [buscado, setBuscado] = useState(false)
+  const [modoConsulta, setModoConsulta] = useState('bisemana')
+  const [bissemanaSel, setBissemanaSel] = useState(() => {
     const hoje = new Date().toISOString().split('T')[0]
     const idx = BISEMANAS.findIndex(b => b.inicio <= hoje && b.fim >= hoje)
     return idx >= 0 ? idx : 0
@@ -42,79 +134,158 @@ export default function Disponibilidade({ setPage }) {
   const [periodoInicio, setPeriodoInicio] = useState('')
   const [periodoFim, setPeriodoFim] = useState('')
 
-  const carregar = async () => {
-    const [pl, co] = await Promise.all([
-      supabase.from('placas').select('id, nome, tipo, localizacao, status').neq('status', 'inativa'),
-      supabase.from('contratos')
-        .select('id, placa_id, data_inicio, data_fim, clientes(nome), contrato_placas(placa_id)')
-        .in('status', ['ativo', 'reservado'])
-        .not('data_inicio', 'is', null)
-        .not('data_fim', 'is', null),
-    ])
-    setPlacas(pl.data || [])
-    setContratos(co.data || [])
-    setLoading(false)
-  }
-
-  useEffect(() => { carregar() }, [])
+  useEffect(() => {
+    async function carregar() {
+      const [pl, co] = await Promise.all([
+        // Busca todas as placas sem filtro (evita bug PostgREST com NULL), filtra inativas no JS
+        supabase.from('placas').select('id, nome, tipo, endereco, status'),
+        supabase.from('contratos')
+          .select('id, placa_id, data_inicio, data_fim, status, clientes(nome), contrato_placas(placa_id, data_inicio, data_fim)')
+          .not('data_inicio', 'is', null)
+          .not('data_fim', 'is', null)
+          .not('status', 'in', '("encerrado","cancelado","renovado")'),
+      ])
+      const placasAtivas = (pl.data || []).filter(p => p.status !== 'inativa')
+      setPlacas(placasAtivas)
+      setContratos(co.data || [])
+      setLoading(false)
+    }
+    carregar()
+  }, [])
 
   const periodoAtual = modoConsulta === 'bisemana'
-    ? { inicio: BISEMANAS[bisemaanaSel]?.inicio || '', fim: BISEMANAS[bisemaanaSel]?.fim || '' }
+    ? { inicio: BISEMANAS[bissemanaSel]?.inicio || '', fim: BISEMANAS[bissemanaSel]?.fim || '' }
     : { inicio: periodoInicio, fim: periodoFim }
 
-  // Para cada placa, descobre contratos que conflitam com o período
-  const getStatusPlaca = (placa) => {
-    if (placa.status === 'manutencao') return { tipo: 'manutencao', contrato: null }
-    if (!periodoAtual.inicio || !periodoAtual.fim) return { tipo: 'livre', contrato: null }
+  const canSearch = !!(periodoAtual.inicio && periodoAtual.fim)
 
-    const pIni = periodoAtual.inicio
-    const pFim = periodoAtual.fim
-
-    // Verifica contrato_placas para cada contrato
-    const conflito = contratos.find(c => {
-      const cIni = c.data_inicio
-      const cFim = c.data_fim
-      // Verifica overlap: início do contrato <= fim do período E fim do contrato >= início do período
-      const overlap = cIni <= pFim && cFim >= pIni
-      if (!overlap) return false
-      // Verifica se esta placa está no contrato (via contrato_placas ou placa_id legacy)
-      const noContrato = (c.contrato_placas || []).some(cp => cp.placa_id === placa.id) || c.placa_id === placa.id
-      return noContrato
-    })
-
-    if (!conflito) return { tipo: 'livre', contrato: null }
-
-    // Reservado = contrato futuro (início depois de hoje)
+  const getContratoConflito = (placa, pIni, pFim) => {
+    // Coleta TODOS os conflitos e retorna o mais relevante:
+    // 1º ativo hoje, 2º mais recente (maior data_inicio)
     const hoje = new Date().toISOString().split('T')[0]
-    if (conflito.data_inicio > hoje) return { tipo: 'reservada', contrato: conflito }
-    return { tipo: 'ocupada', contrato: conflito }
+    let melhor = null
+    for (const c of contratos) {
+      const cpEntries = (c.contrato_placas || []).filter(cp => cp.placa_id === placa.id)
+      if (cpEntries.length > 0) {
+        for (const cp of cpEntries) {
+          const cIni = cp.data_inicio || c.data_inicio
+          const cFim = cp.data_fim || c.data_fim
+          if (cIni <= pFim && cFim >= pIni) {
+            const candidato = { contrato: c, cFim, cIni }
+            if (!melhor) { melhor = candidato; continue }
+            const ativoAgora = cIni <= hoje && cFim >= hoje
+            const melhorAtivoAgora = melhor.cIni <= hoje && melhor.cFim >= hoje
+            if (ativoAgora && !melhorAtivoAgora) melhor = candidato
+            else if (ativoAgora === melhorAtivoAgora && cIni > melhor.cIni) melhor = candidato
+          }
+        }
+      } else if (c.placa_id === placa.id) {
+        if (c.data_inicio <= pFim && c.data_fim >= pIni) {
+          const candidato = { contrato: c, cFim: c.data_fim, cIni: c.data_inicio }
+          if (!melhor) { melhor = candidato; continue }
+          const ativoAgora = c.data_inicio <= hoje && c.data_fim >= hoje
+          const melhorAtivoAgora = melhor.cIni <= hoje && melhor.cFim >= hoje
+          if (ativoAgora && !melhorAtivoAgora) melhor = candidato
+          else if (ativoAgora === melhorAtivoAgora && c.data_inicio > melhor.cIni) melhor = candidato
+        }
+      }
+    }
+    return melhor
   }
 
-  const STATUS_LABEL = {
-    livre:      { emoji: '✅', label: 'Livre',      bg: '#E8F5E9', text: '#2E7D32', border: '#A5D6A7' },
-    reservada:  { emoji: '🔵', label: 'Reservada',  bg: '#EDE7F6', text: '#5E35B1', border: '#C5B8EF' },
-    ocupada:    { emoji: '🔴', label: 'Ocupada',    bg: '#FFEBEE', text: '#C62828', border: '#EF9A9A' },
-    manutencao: { emoji: '🔧', label: 'Manutenção', bg: '#FFF3E0', text: '#E65100', border: '#FFCC80' },
+  // Retorna o próximo contrato que começa APÓS aposData para esta placa
+  const getProximoContratoApos = (placa, aposData) => {
+    let proximo = null
+    for (const c of contratos) {
+      const cpEntries = (c.contrato_placas || []).filter(cp => cp.placa_id === placa.id)
+      if (cpEntries.length > 0) {
+        for (const cp of cpEntries) {
+          const cIni = cp.data_inicio || c.data_inicio
+          const cFim = cp.data_fim || c.data_fim
+          if (cIni > aposData && (!proximo || cIni < proximo.data_inicio)) {
+            proximo = { contrato: c, data_inicio: cIni, data_fim: cFim }
+          }
+        }
+      } else if (c.placa_id === placa.id && c.data_inicio > aposData) {
+        if (!proximo || c.data_inicio < proximo.data_inicio) {
+          proximo = { contrato: c, data_inicio: c.data_inicio, data_fim: c.data_fim }
+        }
+      }
+    }
+    return proximo
   }
 
-  const placasComStatus = placas.map(p => ({ ...p, ...getStatusPlaca(p) }))
-  const livres = placasComStatus.filter(p => p.tipo === 'livre').length
-  const ocupadas = placasComStatus.filter(p => p.tipo === 'ocupada').length
-  const reservadas = placasComStatus.filter(p => p.tipo === 'reservada').length
+  const getStatusPlaca = (placa, pIni, pFim) => {
+    if (placa.status === 'manutencao') return { tipo: 'manutencao', contrato: null, cFim: null }
+    const conflito = getContratoConflito(placa, pIni, pFim)
+    if (!conflito) {
+      // Placa livre no período — verifica se tem janela mínima de MIN_LOCACAO_DIAS
+      const hoje = new Date().toISOString().split('T')[0]
+      const ref = pIni > hoje ? pIni : hoje   // referência: mais tarde entre hoje e início do período
+      const proximo = getProximoContratoApos(placa, pFim)
+      if (proximo) {
+        const diasLivres = Math.round(
+          (new Date(proximo.data_inicio + 'T00:00:00') - new Date(ref + 'T00:00:00')) / 86400000
+        )
+        if (diasLivres < MIN_LOCACAO_DIAS) {
+          // Janela insuficiente — trata como reservada
+          return {
+            tipo: 'reservada',
+            contrato: proximo.contrato,
+            cFim: proximo.data_fim,
+            proximaData: proximo.data_inicio,
+            diasLivres,
+            semJanela: true,
+          }
+        }
+      }
+      return { tipo: 'livre', contrato: null, cFim: null }
+    }
+    const hoje = new Date().toISOString().split('T')[0]
+    const tipo = conflito.contrato.data_inicio > hoje ? 'reservada' : 'ocupada'
+    return { tipo, contrato: conflito.contrato, cFim: conflito.cFim }
+  }
 
-  if (loading) return <div style={{ color: '#888' }}>Carregando...</div>
+  const pIni = buscado ? periodoAtual.inicio : ''
+  const pFim = buscado ? periodoAtual.fim : ''
+
+  const placasComStatus = buscado
+    ? placas.map(p => ({ ...p, tipo_placa: p.tipo, ...getStatusPlaca(p, pIni, pFim) }))
+    : []
+
+  const dataLimite5 = pIni ? addDays(pIni, 5) : ''  // 5 dias a partir do INÍCIO do período
+
+  const livres     = placasComStatus.filter(p => p.tipo === 'livre')
+  const manutencao = placasComStatus.filter(p => p.tipo === 'manutencao')
+  const ocupadas   = placasComStatus.filter(p => p.tipo === 'ocupada' || p.tipo === 'reservada')
+  const prestesIds = new Set(
+    buscado ? ocupadas.filter(p => p.cFim && p.cFim <= dataLimite5).map(p => p.id) : []
+  )
+  const prestesALiberar = ocupadas.filter(p => prestesIds.has(p.id)).map(p => ({ ...p, preste: true }))
+  const apenasOcupadas  = ocupadas.filter(p => !prestesIds.has(p.id))
+
+  if (loading) return <div style={{ color: '#888', padding: 40 }}>Carregando...</div>
+
+  const BtnBuscar = (
+    <button
+      onClick={() => canSearch && setBuscado(true)}
+      disabled={!canSearch}
+      style={{
+        padding: '10px 26px', borderRadius: 10, border: 'none',
+        cursor: canSearch ? 'pointer' : 'not-allowed',
+        background: canSearch ? COLORS.primary : '#ccc',
+        color: '#fff', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', height: 42,
+      }}
+    >🔍 Buscar</button>
+  )
 
   return (
     <div>
-      <PageHeader
-        title="Disponibilidade"
-        sub="Consulta rápida de placas disponíveis por período"
-      />
+      <PageHeader title="Disponibilidade" sub="Consulta rápida de placas disponíveis por período" />
 
-      {/* Seletor de modo */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         {[['bisemana', '📅 Por Bi-semana'], ['periodo', '🗓 Período livre']].map(([v, l]) => (
-          <button key={v} onClick={() => setModoConsulta(v)} style={{
+          <button key={v} onClick={() => { setModoConsulta(v); setBuscado(false) }} style={{
             padding: '8px 18px', borderRadius: 20, fontSize: 13, cursor: 'pointer',
             fontWeight: modoConsulta === v ? 600 : 400,
             background: modoConsulta === v ? COLORS.primary : '#fff',
@@ -124,117 +295,109 @@ export default function Disponibilidade({ setPage }) {
         ))}
       </div>
 
-      {/* Seletor de período */}
       {modoConsulta === 'bisemana' ? (
-        <div style={{ marginBottom: 20 }}>
-          <select
-            value={bisemaanaSel}
-            onChange={e => setBissemanaSel(Number(e.target.value))}
-            style={{
-              width: '100%', maxWidth: 420, padding: '10px 14px', borderRadius: 10,
-              border: `1px solid ${COLORS.border}`, fontSize: 14, background: '#fff',
-              color: COLORS.text, cursor: 'pointer',
-            }}
-          >
-            {BISEMANAS.map((b, i) => (
-              <option key={i} value={i}>{b.label}</option>
-            ))}
-          </select>
-          {BISEMANAS[bisemaanaSel] && (
-            <div style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
-              Período: {new Date(BISEMANAS[bisemaanaSel].inicio + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })} até {new Date(BISEMANAS[bisemaanaSel].fim + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
-            </div>
-          )}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <select
+              value={bissemanaSel}
+              onChange={e => { setBissemanaSel(Number(e.target.value)); setBuscado(false) }}
+              style={{ width: '100%', maxWidth: 420, padding: '10px 14px', borderRadius: 10, border: `1px solid ${COLORS.border}`, fontSize: 14, background: '#fff', color: COLORS.text, cursor: 'pointer' }}
+            >
+              {BISEMANAS.map((b, i) => <option key={i} value={i}>{b.label}</option>)}
+            </select>
+            {BISEMANAS[bissemanaSel] && (
+              <div style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                Período: {new Date(BISEMANAS[bissemanaSel].inicio + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })} até {new Date(BISEMANAS[bissemanaSel].fim + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+              </div>
+            )}
+          </div>
+          {BtnBuscar}
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Data início</label>
-            <input type="date" value={periodoInicio} onChange={e => setPeriodoInicio(e.target.value)}
+            <input type="date" value={periodoInicio} onChange={e => { setPeriodoInicio(e.target.value); setBuscado(false) }}
               style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14 }} />
           </div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Data fim</label>
-            <input type="date" value={periodoFim} onChange={e => setPeriodoFim(e.target.value)}
+            <input type="date" value={periodoFim} onChange={e => { setPeriodoFim(e.target.value); setBuscado(false) }}
               style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14 }} />
           </div>
+          {BtnBuscar}
         </div>
       )}
 
-      {/* Resumo */}
-      {periodoAtual.inicio && periodoAtual.fim && (
-        <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-          {[
-            ['✅', livres, 'livres', '#E8F5E9', '#2E7D32'],
-            ['🔴', ocupadas, 'ocupadas', '#FFEBEE', '#C62828'],
-            ['🔵', reservadas, 'reservadas', '#EDE7F6', '#5E35B1'],
-          ].map(([emoji, count, label, bg, color]) => (
-            <div key={label} style={{ background: bg, borderRadius: 12, padding: '10px 18px', display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 20 }}>{emoji}</span>
-              <div>
-                <div style={{ fontSize: 20, fontWeight: 800, color }}>{count}</div>
-                <div style={{ fontSize: 11, color, opacity: 0.8 }}>placa{count !== 1 ? 's' : ''} {label}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Grid de placas */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-        {placasComStatus.map(p => {
-          const st = STATUS_LABEL[p.tipo] || STATUS_LABEL.livre
-          return (
-            <div key={p.id} style={{
-              background: st.bg, borderRadius: 14,
-              border: `1.5px solid ${st.border}`,
-              padding: '16px 18px',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a18' }}>{p.nome}</div>
-                  <div style={{ fontSize: 12, color: '#888' }}>{p.tipo === 'dupla' ? '18×3m dupla' : '9×3m simples'}</div>
-                  {p.localizacao && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{p.localizacao}</div>}
-                </div>
-                <span style={{ fontSize: 22 }}>{st.emoji}</span>
-              </div>
-
-              <div style={{
-                display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
-                borderRadius: 20, fontSize: 11, fontWeight: 700,
-                background: 'rgba(255,255,255,0.6)', color: st.text, border: `1px solid ${st.border}`,
-                marginBottom: 10,
-              }}>
-                {st.label}
-              </div>
-
-              {p.contrato && (
-                <div style={{ fontSize: 12, color: st.text, opacity: 0.85, marginBottom: 10 }}>
-                  {p.contrato.clientes?.nome && <div>👤 {p.contrato.clientes.nome}</div>}
-                  <div>📅 {new Date(p.contrato.data_inicio + 'T00:00:00').toLocaleDateString('pt-BR')} → {new Date(p.contrato.data_fim + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
-                </div>
-              )}
-
-              {p.tipo === 'livre' && setPage && (
-                <Btn
-                  size="sm"
-                  onClick={() => setPage('contratos')}
-                  style={{ fontSize: 11 }}
-                >
-                  + Criar contrato
-                </Btn>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {placas.length === 0 && (
+      {!buscado && (
         <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🪧</div>
-          <div style={{ fontSize: 15 }}>Nenhuma placa cadastrada</div>
+          {placas.length === 0
+            ? <><div style={{ fontSize: 40, marginBottom: 12 }}>🪧</div><div style={{ fontSize: 15 }}>Nenhuma placa cadastrada</div></>
+            : <>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
+                <div style={{ fontSize: 15 }}>Selecione um período e clique em Buscar</div>
+                <div style={{ fontSize: 13, marginTop: 6 }}>{placas.length} placa{placas.length !== 1 ? 's' : ''} cadastrada{placas.length !== 1 ? 's' : ''}</div>
+              </>
+          }
         </div>
+      )}
+
+      {buscado && (
+        <>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
+            {[
+              ['✅', livres.length, 'livres', '#E8F5E9', '#2E7D32'],
+              ['⏳', prestesALiberar.length, 'prestes a liberar', '#FFFBEB', '#B45309'],
+              ['🔴', apenasOcupadas.length, 'ocupadas/reservadas', '#FFEBEE', '#C62828'],
+              ['🔧', manutencao.length, 'em manutenção', '#FFF3E0', '#E65100'],
+            ].filter(([, count]) => count > 0).map(([emoji, count, label, bg, color]) => (
+              <div key={label} style={{ background: bg, borderRadius: 12, padding: '10px 18px', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 20 }}>{emoji}</span>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color }}>{count}</div>
+                  <div style={{ fontSize: 11, color, opacity: 0.8 }}>placa{count !== 1 ? 's' : ''} {label}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {livres.length > 0 && (
+            <section style={{ marginBottom: 32 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: '#2E7D32', marginBottom: 12 }}>✅ Placas Disponíveis ({livres.length})</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+                {livres.map(p => <PlacaCard key={p.id} p={p} onCreateContrato={setPage ? () => setPage('contratos') : null} />)}
+              </div>
+            </section>
+          )}
+
+          {prestesALiberar.length > 0 && (
+            <section style={{ marginBottom: 32 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: '#B45309', marginBottom: 6 }}>⏳ Ficam livres em até 5 dias ({prestesALiberar.length})</h3>
+              <p style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
+                Contrato termina até {dataLimite5 ? new Date(dataLimite5 + 'T00:00:00').toLocaleDateString('pt-BR') : ''} — até 5 dias após o início do período.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+                {prestesALiberar.map(p => <PlacaCard key={p.id} p={p} />)}
+              </div>
+            </section>
+          )}
+
+          {apenasOcupadas.length > 0 && (
+            <section style={{ marginBottom: 32 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: '#C62828', marginBottom: 12 }}>🔴 Placas Ocupadas / Reservadas ({apenasOcupadas.length})</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+                {apenasOcupadas.map(p => <PlacaCard key={p.id} p={p} />)}
+              </div>
+            </section>
+          )}
+
+          {livres.length === 0 && prestesALiberar.length === 0 && manutencao.length === 0 && (
+            <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>😔</div>
+              <div style={{ fontSize: 15 }}>Nenhuma placa disponível neste período</div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
