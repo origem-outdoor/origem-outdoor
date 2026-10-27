@@ -32,6 +32,9 @@ const IcoAlert     = () => <svg width={18} height={18} viewBox="0 0 24 24" fill=
 const IcoBars      = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
 const IcoPlus      = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
 const IcoChevron   = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+const IcoEye = ({ closed = false }) => closed
+  ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22"/></svg>
+  : <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
 
 function PeriodoPicker({ valor, onChange }) {
   const [open, setOpen] = useState(false)
@@ -143,7 +146,7 @@ function StatusBadge({ status }) {
   )
 }
 
-function BarChart({ meses }) {
+function BarChart({ meses, ocultar = false }) {
   const nomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
   const [tooltip, setTooltip] = React.useState(null)
   if (!meses || meses.length === 0) return (
@@ -161,7 +164,7 @@ function BarChart({ meses }) {
           <span style={{ fontSize: 13, color: C.textLight }}>{nomes[meses[0].mes - 1]} a {nomes[meses[meses.length-1].mes - 1]} de {meses[meses.length-1].ano}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-          <span style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{formatBRL(total)}</span>
+          <span style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{ocultar ? 'R$ ••••' : formatBRL(total)}</span>
           <span style={{ fontSize: 12, color: C.textLight }}>total no periodo</span>
         </div>
       </div>
@@ -195,30 +198,30 @@ function BarChart({ meses }) {
             {(tooltip.m.valorLocacoes > 0) && (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginBottom: 3 }}>
                 <span style={{ color: '#93c5fd' }}>Locações</span>
-                <span style={{ fontWeight: 700 }}>{formatBRL(tooltip.m.valorLocacoes)}</span>
+                <span style={{ fontWeight: 700 }}>{ocultar ? '••••' : formatBRL(tooltip.m.valorLocacoes)}</span>
               </div>
             )}
             {(tooltip.m.valorTrocas > 0) && (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginBottom: 3 }}>
                 <span style={{ color: '#c4b5fd' }}>Trocas de placa</span>
-                <span style={{ fontWeight: 700 }}>{formatBRL(tooltip.m.valorTrocas)}</span>
+                <span style={{ fontWeight: 700 }}>{ocultar ? '••••' : formatBRL(tooltip.m.valorTrocas)}</span>
               </div>
             )}
             {(tooltip.m.valorComissoes > 0) && (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginBottom: 3 }}>
                 <span style={{ color: '#6ee7b7' }}>Comissões</span>
-                <span style={{ fontWeight: 700 }}>{formatBRL(tooltip.m.valorComissoes)}</span>
+                <span style={{ fontWeight: 700 }}>{ocultar ? '••••' : formatBRL(tooltip.m.valorComissoes)}</span>
               </div>
             )}
             {(tooltip.m.valorPermuta > 0) && (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginBottom: 3 }}>
                 <span style={{ color: '#f9a8d4' }}>Permuta</span>
-                <span style={{ fontWeight: 700 }}>{formatBRL(tooltip.m.valorPermuta)}</span>
+                <span style={{ fontWeight: 700 }}>{ocultar ? '••••' : formatBRL(tooltip.m.valorPermuta)}</span>
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, borderTop: '1px solid #334155', marginTop: 5, paddingTop: 5, fontWeight: 800 }}>
               <span>Total</span>
-              <span>{formatBRL(tooltip.m.valor + (tooltip.m.valorPermuta || 0))}</span>
+              <span>{ocultar ? '••••' : formatBRL(tooltip.m.valor + (tooltip.m.valorPermuta || 0))}</span>
             </div>
           </div>
         )}
@@ -235,8 +238,8 @@ function BarChart({ meses }) {
               onMouseLeave={() => setTooltip(null)}
             >
               {isLast
-                ? <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: C.primary, padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap' }}>{label}</span>
-                : <span style={{ fontSize: 11, fontWeight: 700, color: C.textMed, whiteSpace: 'nowrap' }}>{m.valor > 0 ? label : '-'}</span>
+                ? <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: C.primary, padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap' }}>{ocultar ? '••••' : label}</span>
+                : <span style={{ fontSize: 11, fontWeight: 700, color: C.textMed, whiteSpace: 'nowrap' }}>{m.valor > 0 ? (ocultar ? '••••' : label) : '-'}</span>
               }
               <div style={{ width: '100%', maxWidth: 52, height: barH, background: isLast ? C.primary : '#BBD3F0', borderRadius: '8px 8px 0 0' }} />
             </div>
@@ -301,7 +304,9 @@ export default function Dashboard({ setPage = () => {} }) {
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState(6)
   const [modal, setModal] = useState(null) // null | 'contratos' | 'receita' | 'faturamento' | 'placas' | 'liquida'
+  const [ocultar, setOcultar] = useState(false)
   const hoje = new Date()
+  const fmt = (v) => ocultar ? 'R$ ••••' : formatBRL(v)
 
   useEffect(() => {
     async function carregar() {
@@ -580,7 +585,7 @@ export default function Dashboard({ setPage = () => {} }) {
           {parcelasAtrasadas.length} parcela{parcelasAtrasadas.length > 1 ? 's' : ''} em atraso
         </div>
         <div style={{ fontSize: 13, color: '#BE123C', marginTop: 2 }}>
-          Total em aberto: {formatBRL(parcelasAtrasadas.reduce((s, p) => s + (p.valor || 0), 0))}
+          Total em aberto: {fmt(parcelasAtrasadas.reduce((s, p) => s + (p.valor || 0), 0))}
         </div>
       </div>
       <button onClick={() => navigate('parcelas')} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#F43F5E', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
@@ -635,24 +640,24 @@ export default function Dashboard({ setPage = () => {} }) {
             <RowItem key={c.id}
               label={c.clientes?.nome || '-'}
               sub={(c.contrato_placas || []).map(cp => cp.placas?.nome).filter(Boolean).join(' / ') || c.placas?.nome || '-'}
-              value={formatBRL(c.valor_total)}
+              value={fmt(c.valor_total)}
             />
           ))}
-          <RowItem label="Total" value={formatBRL(contratosAtivos.reduce((s,c) => s+(c.valor_total||0),0))} color="#1565C0" />
+          <RowItem label="Total" value={fmt(contratosAtivos.reduce((s,c) => s+(c.valor_total||0),0))} color="#1565C0" />
         </ModalWrap>
       )}
 
       {modal === 'receita' && (
         <ModalWrap title={`Receita de ${new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}`}>
-          <RowItem label="Parcelas pagas (caixa)" value={formatBRL(receitaMes)} sub={`${parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) !== 'permuta').length} parcela(s)`} />
-          {comissaoDoMes > 0 && <RowItem label="Comissões recebidas" value={formatBRL(comissaoDoMes)} color="#0A5C42" />}
-          {faturamentoTrocaDoMes > 0 && <RowItem label="Trocas de placa (recebido)" value={formatBRL(faturamentoTrocaDoMes)} color="#7C3AED" />}
-          {receitaPermutaMes > 0 && <RowItem label="Permuta (valor)" value={formatBRL(receitaPermutaMes)} color="#7C3AED" sub="não entra no caixa" />}
-          <RowItem label="Total do mês" value={formatBRL(receitaMes + comissaoDoMes + faturamentoTrocaDoMes)} color="#1565C0" />
+          <RowItem label="Parcelas pagas (caixa)" value={fmt(receitaMes)} sub={`${parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) !== 'permuta').length} parcela(s)`} />
+          {comissaoDoMes > 0 && <RowItem label="Comissões recebidas" value={fmt(comissaoDoMes)} color="#0A5C42" />}
+          {faturamentoTrocaDoMes > 0 && <RowItem label="Trocas de placa (recebido)" value={fmt(faturamentoTrocaDoMes)} color="#7C3AED" />}
+          {receitaPermutaMes > 0 && <RowItem label="Permuta (valor)" value={fmt(receitaPermutaMes)} color="#7C3AED" sub="não entra no caixa" />}
+          <RowItem label="Total do mês" value={fmt(receitaMes + comissaoDoMes + faturamentoTrocaDoMes)} color="#1565C0" />
           <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Parcelas pagas este mês:</div>
           {parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) !== 'permuta').map(p => {
             const cont = dados.contratos.find(c => c.id === p.contrato_id)
-            return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)}`} value={formatBRL(p.valor)} />
+            return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)}`} value={fmt(p.valor)} />
           })}
           {(() => {
             const trocasMes = dados.comissoes.filter(c => c.tipo === 'troca_placa' && c.status_pagamento === 'pago' && (() => { const d = c.data_pagamento || c.data_inicio; if (!d) return false; const dt = new Date(d + 'T00:00:00'); return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual })())
@@ -660,11 +665,11 @@ export default function Dashboard({ setPage = () => {} }) {
             const permutaMes = parcelasPagasMes.filter(p => contratoForma.get(p.contrato_id) === 'permuta')
             return (<>
               {trocasMes.length > 0 && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#7C3AED' }}>Trocas de placa:</div>}
-              {trocasMes.map(c => <RowItem key={c.id} label={c.clientes?.nome || c.descricao || '-'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)}`} value={formatBRL(c.valor_recebido_troca)} color="#7C3AED" />)}
+              {trocasMes.map(c => <RowItem key={c.id} label={c.clientes?.nome || c.descricao || '-'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)}`} value={fmt(c.valor_recebido_troca)} color="#7C3AED" />)}
               {comissoesMes.length > 0 && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#0A5C42' }}>Comissões:</div>}
-              {comissoesMes.map(c => <RowItem key={c.id} label={c.clientes?.nome || c.descricao || '-'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)}`} value={formatBRL(c.valor_comissao)} color="#0A5C42" />)}
+              {comissoesMes.map(c => <RowItem key={c.id} label={c.clientes?.nome || c.descricao || '-'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)}`} value={fmt(c.valor_comissao)} color="#0A5C42" />)}
               {permutaMes.length > 0 && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#7C3AED' }}>Permuta (não entra no caixa):</div>}
-              {permutaMes.map(p => { const cont = dados.contratos.find(c => c.id === p.contrato_id); return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)}`} value={formatBRL(p.valor)} color="#7C3AED" /> })}
+              {permutaMes.map(p => { const cont = dados.contratos.find(c => c.id === p.contrato_id); return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)}`} value={fmt(p.valor)} color="#7C3AED" /> })}
             </>)
           })()}
         </ModalWrap>
@@ -672,11 +677,11 @@ export default function Dashboard({ setPage = () => {} }) {
 
       {modal === 'faturamento' && (
         <ModalWrap title={`Faturamento — últimos ${periodo} meses`}>
-          <RowItem label="Total acumulado" value={formatBRL(fatPeriodo)} color="#1565C0" />
-          <RowItem label="Parcelas pagas (caixa)" value={formatBRL(mesesPeriodo.reduce((s,m)=>s+m.valor,0))} />
-          {permutaPeriodo > 0 && <RowItem label="+ Permuta (valor)" value={formatBRL(permutaPeriodo)} color="#7C3AED" sub="não entra no caixa" />}
-          {comissoesDoPeriodo > 0 && <RowItem label="+ Comissões recebidas" value={formatBRL(comissoesDoPeriodo)} color="#0A5C42" />}
-          {trocasDoPeriodo > 0 && <RowItem label="+ Trocas de placa recebidas" value={formatBRL(trocasDoPeriodo)} color="#7C3AED" />}
+          <RowItem label="Total acumulado" value={fmt(fatPeriodo)} color="#1565C0" />
+          <RowItem label="Parcelas pagas (caixa)" value={fmt(mesesPeriodo.reduce((s,m)=>s+m.valor,0))} />
+          {permutaPeriodo > 0 && <RowItem label="+ Permuta (valor)" value={fmt(permutaPeriodo)} color="#7C3AED" sub="não entra no caixa" />}
+          {comissoesDoPeriodo > 0 && <RowItem label="+ Comissões recebidas" value={fmt(comissoesDoPeriodo)} color="#0A5C42" />}
+          {trocasDoPeriodo > 0 && <RowItem label="+ Trocas de placa recebidas" value={fmt(trocasDoPeriodo)} color="#7C3AED" />}
           <div style={{ marginTop: 16, borderTop: '1px solid #e6e9f0', paddingTop: 12, fontSize: 13, fontWeight: 700, color: '#5B6577' }}>Detalhamento por mês:</div>
           {mesesGrafico.filter(m => m.valor > 0).map(m => {
             const label = new Date(m.ano, m.mes-1, 1).toLocaleDateString('pt-BR', {month:'short', year:'numeric'})
@@ -703,17 +708,17 @@ export default function Dashboard({ setPage = () => {} }) {
             return (
               <div key={label} style={{ marginBottom: 6 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginTop: 10, marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{label}</span><span>{formatBRL(m.valor)}</span>
+                  <span>{label}</span><span>{fmt(m.valor)}</span>
                 </div>
                 {parcsDoMes.map(p => {
                   const cont = dados.contratos.find(c => c.id === p.contrato_id)
-                  return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)} · aluguel`} value={formatBRL(p.valor)} />
+                  return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)} · aluguel`} value={fmt(p.valor)} />
                 })}
                 {trocasDoMes.map(c => (
-                  <RowItem key={c.id} label={c.clientes?.nome || c.descricao || 'Troca'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)} · troca de placa`} value={formatBRL(c.valor_recebido_troca)} color="#7C3AED" />
+                  <RowItem key={c.id} label={c.clientes?.nome || c.descricao || 'Troca'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)} · troca de placa`} value={fmt(c.valor_recebido_troca)} color="#7C3AED" />
                 ))}
                 {comissoesDoMes.map(c => (
-                  <RowItem key={c.id} label={c.clientes?.nome || c.descricao || 'Comissão'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)} · comissão`} value={formatBRL(c.valor_comissao)} color="#0A5C42" />
+                  <RowItem key={c.id} label={c.clientes?.nome || c.descricao || 'Comissão'} sub={`pgto ${formatDate(c.data_pagamento || c.data_inicio)} · comissão`} value={fmt(c.valor_comissao)} color="#0A5C42" />
                 ))}
               </div>
             )
@@ -723,7 +728,7 @@ export default function Dashboard({ setPage = () => {} }) {
               <div style={{ fontSize: 12, fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', marginBottom: 4 }}>Permuta (não entra no caixa)</div>
               {permutaListPeriodo.map(p => {
                 const cont = dados.contratos.find(c => c.id === p.contrato_id)
-                return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)}`} value={formatBRL(p.valor)} color="#7C3AED" />
+                return <RowItem key={p.id} label={cont?.clientes?.nome || '-'} sub={`pgto ${formatDate(p.data_pagamento || p.data_vencimento)}`} value={fmt(p.valor)} color="#7C3AED" />
               })}
             </div>
           )}
@@ -743,12 +748,12 @@ export default function Dashboard({ setPage = () => {} }) {
 
       {modal === 'liquida' && (
         <ModalWrap title="Receita Líquida do Mês">
-          <RowItem label="Receita bruta (caixa)" value={formatBRL(receitaMes)} />
-          {comissaoDoMes > 0 && <RowItem label="+ Comissões" value={formatBRL(comissaoDoMes)} color="#0A5C42" />}
-          {faturamentoTrocaDoMes > 0 && <RowItem label="+ Trocas recebidas" value={formatBRL(faturamentoTrocaDoMes)} color="#7C3AED" />}
-          <RowItem label="− Custos (colagem, impressão, terreno)" value={formatBRL(custosDoMes)} color="#C2410C" />
-          {custoTrocaDoMes > 0 && <RowItem label="− Custo trocas de placa" value={formatBRL(custoTrocaDoMes)} color="#C2410C" />}
-          <RowItem label="= Receita Líquida" value={formatBRL(receitaLiquidaTotal)} color={receitaLiquidaTotal >= 0 ? '#166534' : '#C2410C'} />
+          <RowItem label="Receita bruta (caixa)" value={fmt(receitaMes)} />
+          {comissaoDoMes > 0 && <RowItem label="+ Comissões" value={fmt(comissaoDoMes)} color="#0A5C42" />}
+          {faturamentoTrocaDoMes > 0 && <RowItem label="+ Trocas recebidas" value={fmt(faturamentoTrocaDoMes)} color="#7C3AED" />}
+          <RowItem label="− Custos (colagem, impressão, terreno)" value={fmt(custosDoMes)} color="#C2410C" />
+          {custoTrocaDoMes > 0 && <RowItem label="− Custo trocas de placa" value={fmt(custoTrocaDoMes)} color="#C2410C" />}
+          <RowItem label="= Receita Líquida" value={fmt(receitaLiquidaTotal)} color={receitaLiquidaTotal >= 0 ? '#166534' : '#C2410C'} />
         </ModalWrap>
       )}
 
@@ -759,6 +764,20 @@ export default function Dashboard({ setPage = () => {} }) {
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <PeriodoPicker valor={periodo} onChange={setPeriodo} />
+          <button
+            onClick={() => setOcultar(o => !o)}
+            title={ocultar ? 'Mostrar valores' : 'Ocultar valores'}
+            style={{
+              height: 44, width: 44, borderRadius: 10,
+              border: `1px solid ${ocultar ? C.primary : C.border}`,
+              background: ocultar ? C.primarySoft : C.surface,
+              color: ocultar ? C.primary : C.textMed,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s',
+            }}
+          >
+            <IcoEye closed={ocultar} />
+          </button>
           <button
             onClick={() => navigate('contratos')}
             style={{
@@ -780,27 +799,27 @@ export default function Dashboard({ setPage = () => {} }) {
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
         <KpiCard icon={<IcoContract />} label="Contratos Ativos" value={contratosAtivos.length} sub={<><span style={{ color: '#1B7A3E', fontWeight: 700 }}>+0</span> em relacao ao mes passado</>} onClick={() => setModal('contratos')} />
-        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={formatBRL(receitaMes + comissaoDoMes + faturamentoTrocaDoMes)} onClick={() => setModal('receita')}
+        <KpiCard icon={<IcoDollar />}   label="Receita do Mês" value={fmt(receitaMes + comissaoDoMes + faturamentoTrocaDoMes)} onClick={() => setModal('receita')}
           sub={<>
             parcelas + comissões em {new Date().toLocaleDateString('pt-BR', {month: 'long'})}
-            {comissaoDoMes > 0 && <span style={{ display: 'block', color: '#0A5C42', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(comissaoDoMes)} comissões</span>}
-            {faturamentoTrocaDoMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(faturamentoTrocaDoMes)} trocas</span>}
-            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {formatBRL(receitaPermutaMes)} em permuta</span>}
+            {comissaoDoMes > 0 && <span style={{ display: 'block', color: '#0A5C42', fontWeight: 600, marginTop: 2 }}>+ {fmt(comissaoDoMes)} comissões</span>}
+            {faturamentoTrocaDoMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {fmt(faturamentoTrocaDoMes)} trocas</span>}
+            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>+ {fmt(receitaPermutaMes)} em permuta</span>}
           </>} />
-        <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={formatBRL(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue onClick={() => setModal('faturamento')} />
+        <KpiCard icon={<IcoTrend />}    label={`Faturamento ${periodo} meses`} value={fmt(fatPeriodo)} sub={<><span style={{ fontWeight: 700 }}>acumulado</span> ultimos {periodo} meses</>} blue onClick={() => setModal('faturamento')} />
         <KpiCard icon={<IcoBoard />}    label="Placas Disponiveis" value={<>{placasDisp} <span style={{ fontSize: 15, fontWeight: 600, color: C.textLight }}>de {totalPlacas}</span></>} bar={pctDisp} onClick={() => setModal('placas')} />
-        <KpiCard icon={<IcoDollar />}   label="Receita Líquida" value={formatBRL(receitaLiquidaTotal)} onClick={() => setModal('liquida')}
+        <KpiCard icon={<IcoDollar />}   label="Receita Líquida" value={fmt(receitaLiquidaTotal)} onClick={() => setModal('liquida')}
           sub={<>
             <span style={{ color: C.textLight }}>receita + comissões − custos − trocas</span>
-            {custoTrocaDoMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>− {formatBRL(custoTrocaDoMes)} trocas de placa</span>}
-            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>Permuta: {formatBRL(receitaPermutaMes - custosPermutaMes)} líq.</span>}
+            {custoTrocaDoMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>− {fmt(custoTrocaDoMes)} trocas de placa</span>}
+            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>Permuta: {fmt(receitaPermutaMes - custosPermutaMes)} líq.</span>}
           </>}
           highlight={receitaLiquidaTotal > 0} />
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20 }}>
         <section style={{ background: C.surface, borderRadius: 14, padding: '22px 24px', boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)' }}>
-          <BarChart meses={mesesGrafico} />
+          <BarChart meses={mesesGrafico} ocultar={ocultar} />
         </section>
         <section style={{ background: C.surface, borderRadius: 14, padding: '22px 24px', boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 4px 16px rgba(16,24,40,0.05)' }}>
           <DonutChart ativas={placasAtivas} disponiveis={placasDisp} manutencao={placasManut} />
@@ -833,7 +852,7 @@ export default function Dashboard({ setPage = () => {} }) {
                       const names = (c.contrato_placas || []).map(cp => cp.placas?.nome).filter(Boolean)
                       return names.length > 0 ? names.join(' / ') : (c.placas?.nome || '-')
                     })()}</td>
-                    <td style={{ padding: '13px 8px', textAlign: 'right', fontWeight: 600, color: C.text }}>{formatBRL(c.valor_total)}</td>
+                    <td style={{ padding: '13px 8px', textAlign: 'right', fontWeight: 600, color: C.text }}>{fmt(c.valor_total)}</td>
                     <td style={{ padding: '13px 8px' }}><StatusBadge status={statusExibicao(c)} /></td>
                     <td style={{ padding: '13px 8px', color: C.textMed }}>{formatDate(c.data_fim)}</td>
                   </tr>
@@ -848,7 +867,7 @@ export default function Dashboard({ setPage = () => {} }) {
             <span style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: C.warnSoft, color: C.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IcoAlert /></span>
             <div style={{ flexGrow: 1 }}>
               <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>Vencendo em breve</h2>
-              <span style={{ fontSize: 12, color: C.textLight }}>{formatBRL(vencendo30.reduce((s,c) => s+(c.valor_total||0),0))}/mes em renovacao</span>
+              <span style={{ fontSize: 12, color: C.textLight }}>{fmt(vencendo30.reduce((s,c) => s+(c.valor_total||0),0))}/mes em renovacao</span>
             </div>
             <span style={{ minWidth: 28, height: 28, padding: '0 8px', boxSizing: 'border-box', borderRadius: 999, background: C.danger, color: '#fff', fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{vencendo30.length}</span>
           </div>
@@ -867,7 +886,7 @@ export default function Dashboard({ setPage = () => {} }) {
                   </div>
                   <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                     <span style={{ fontSize: 14, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.clientes?.nome || '-'}</span>
-                    <span style={{ fontSize: 12, color: C.textLight }}>{c.placas?.nome} - vence {formatDate(c.data_fim)} - {formatBRL(c.valor_total)}</span>
+                    <span style={{ fontSize: 12, color: C.textLight }}>{c.placas?.nome} - vence {formatDate(c.data_fim)} - {fmt(c.valor_total)}</span>
                   </div>
                   <button onClick={() => navigate('contratos')} style={{ fontSize: 13, fontWeight: 700, color: C.primary, background: 'none', border: 'none', cursor: 'pointer', padding: '8px 4px', flexShrink: 0 }}>Renovar</button>
                 </div>
