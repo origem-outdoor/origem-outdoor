@@ -291,7 +291,7 @@ export default function Contratos() {
     const dataFimContrato = todasDatas.map(d => d.data_fim).filter(Boolean).sort().reverse()[0] || form.data_fim
     // Só valores aceitos pelo banco: 'ativo', 'encerrado', 'renovado', 'cancelado'
     // Status dinâmicos (reservado/expirado/vencendo) são calculados em runtime, não armazenados
-    const statusCalc = ['encerrado', 'renovado', 'cancelado'].includes(form.status) ? form.status : 'ativo'
+    const statusCalc = ['encerrado', 'renovado', 'cancelado'].includes(form.status) ? form.status : null
 
     const payload = {
       cliente_id: form.cliente_id || null,
