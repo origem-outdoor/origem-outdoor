@@ -201,7 +201,7 @@ export function Comissoes() {
 
   const totalComissoes = comissoes.filter(c => c.status_pagamento === 'pago' && c.tipo !== 'troca_placa').reduce((s, c) => s + (c.valor_comissao || 0), 0)
   const totalTrocas = comissoes.filter(c => c.tipo === 'troca_placa').length
-  const totalRecebidoTrocas = comissoes.filter(c => c.tipo === 'troca_placa').reduce((s, c) => s + (Number(c.valor_recebido_troca) || 0), 0)
+  const totalRecebidoTrocas = comissoes.filter(c => c.tipo === 'troca_placa').reduce((s, c) => s + ((Number(c.valor_recebido_troca) || 0) - (Number(c.custo_colagem) || 0) - (Number(c.custo_impressao_troca) || 0)), 0)
   const custoTrocas = comissoes.filter(c => c.tipo === 'troca_placa').reduce((s, c) => s + (Number(c.custo_colagem) || 0) + (Number(c.custo_impressao_troca) || 0), 0)
   const totalRecebido = totalComissoes + totalRecebidoTrocas
 
