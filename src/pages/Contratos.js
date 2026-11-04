@@ -2,6 +2,16 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { PageHeader, Badge, Btn, Input, Select, Modal, formatBRL, formatDate, diasRestantes, STATUS_PAGAMENTO, COLORS } from '../components/UI'
 
+const FORM_COM = {
+  tipo: 'comissao',
+  descricao: '', cliente_id: '',
+  valor_negociado: 0, percentual_comissao: 20,
+  proprietario_placa: '',
+  valor_recebido_troca: 0, custo_colagem: 0, custo_impressao_troca: 0,
+  data_inicio: '', data_fim: '',
+  status_pagamento: 'aguardando', data_pagamento: '', observacoes: ''
+}
+
 const FORM_VAZIO = {
   placa_ids: [],
   placa_datas: {},
@@ -17,7 +27,7 @@ const FORM_VAZIO = {
   forma_pagamento: 'pix',
   forma_parcelamento: 'avista',
   num_parcelas: 2,
-  status_pagamento: 'aguardando', data_pagamento: '', observacoes_pagamento: '',
+  status_pagamento: 'aguardando', data_pagamento: '', observacoes_pagamento: '', permuta_descricao: '',
   historico: false, status: 'ativo', observacoes: ''
 }
 
@@ -103,26 +113,61 @@ export default function Contratos() {
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(FORM_VAZIO)
   const [parcelas, setParcelas] = useState([])
+  const parcelasLockRef = React.useRef(false) // true = não regenerar (carregado do banco ou editado manualmente)
   const [salvando, setSalvando] = useState(false)
   const [filtro, setFiltro] = useState('ativo')
   const [novoCliente, setNovoCliente] = useState({ nome: '', telefone: '' })
   const [criandoCliente, setCriandoCliente] = useState(false)
   const [salvandoCliente, setSalvandoCliente] = useState(false)
+  const [comissoes, setComissoes] = useState([])
+  const [modalCom, setModalCom] = useState(null)
+  const [formCom, setFormCom] = useState(FORM_COM)
+  const [salvandoCom, setSalvandoCom] = useState(false)
 
   const carregar = async () => {
-    const [co, pl, cl, ve] = await Promise.all([
+    const [co, pl, cl, ve, cms] = await Promise.all([
       supabase.from('contratos')
         .select('*, clientes(nome), vendedores(nome), contrato_placas(placa_id, face, valor_por_placa, placas(nome))')
         .order('created_at', { ascending: false }),
       supabase.from('placas').select('id, nome, tipo, aluguel_terreno_mensal').eq('status', 'ativa'),
       supabase.from('clientes').select('id, nome').order('nome'),
       supabase.from('vendedores').select('id, nome').eq('ativo', true).order('nome'),
+      supabase.from('comissoes').select('*, clientes(nome)').order('created_at', { ascending: false }),
     ])
     setContratos(co.data || [])
     setPlacas(pl.data || [])
     setClientes(cl.data || [])
     setVendedores(ve.data || [])
+    setComissoes(cms.data || [])
     setLoading(false)
+  }
+
+  // ── Comissões helpers ─────────────────────────────────────────────
+  const setCom = (k, v) => setFormCom(f => ({ ...f, [k]: v }))
+
+  const abrirCom = (c = null) => {
+    setFormCom(c ? { ...FORM_COM, ...c } : FORM_COM)
+    setModalCom(c ? 'editar' : 'novo')
+  }
+
+  const salvarCom = async () => {
+    if (!formCom.descricao.trim()) { alert('Informe a descrição.'); return }
+    setSalvandoCom(true)
+    const payload = { ...formCom }
+    delete payload.id; delete payload.created_at; delete payload.clientes; delete payload.valor_comissao
+    if (!payload.cliente_id) payload.cliente_id = null
+    if (!payload.data_inicio) payload.data_inicio = null
+    if (!payload.data_fim) payload.data_fim = null
+    if (!payload.data_pagamento) payload.data_pagamento = null
+    if (modalCom === 'novo') await supabase.from('comissoes').insert(payload)
+    else await supabase.from('comissoes').update(payload).eq('id', formCom.id)
+    setSalvandoCom(false); setModalCom(null); carregar()
+  }
+
+  const excluirCom = async (id) => {
+    if (!window.confirm('Remover este registro?')) return
+    await supabase.from('comissoes').delete().eq('id', id)
+    carregar()
   }
 
   useEffect(() => { carregar() }, [])
@@ -135,32 +180,17 @@ export default function Contratos() {
     return novo
   })
 
-  // Recalcula parcelas apenas ao abrir modal novo ou mudar nº de parcelas
-  // NÃO recalcula se parcelas já foram editadas manualmente (vieram do banco ou foram ajustadas)
-  const parcelasInicializadasRef = React.useRef(false)
-  useEffect(() => {
-    if (!modal) { parcelasInicializadasRef.current = false; return }
-    if (form.forma_parcelamento !== 'parcelado') return
-    if (parcelasInicializadasRef.current) return  // já inicializado — não sobrescreve edições manuais
-    parcelasInicializadasRef.current = true
-    const vt = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
-    setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
-  }, [modal, form.forma_parcelamento])
-
-  // Regenera parcelas quando muda num_parcelas ou valor total (reset intencional)
-  const prevNumParcelas = React.useRef(form.num_parcelas)
+  // Recalcula parcelas quando mudam campos relevantes (só para modo parcelado)
   useEffect(() => {
     if (!modal) return
     if (form.forma_parcelamento !== 'parcelado') return
-    if (!parcelasInicializadasRef.current) return
+    if (parcelasLockRef.current) return // parcelas carregadas do banco ou editadas manualmente — não sobrescrever
     const vt = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
-    if (prevNumParcelas.current !== form.num_parcelas) {
-      prevNumParcelas.current = form.num_parcelas
-      setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
-    }
-  }, [form.num_parcelas, form.valor_veiculacao, form.valor_arte, form.valor_impressao])
+    setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
+  }, [form.valor_veiculacao, form.valor_arte, form.valor_impressao, form.forma_parcelamento, form.num_parcelas, form.data_inicio, modal])
 
   const atualizarParcela = (idx, campo, valor) => {
+    parcelasLockRef.current = true // usuário editou manualmente — bloquear regeneração automática
     setParcelas(prev => {
       const novas = [...prev]
       novas[idx] = { ...novas[idx], [campo]: campo === 'valor' ? parseFloat(valor) || 0 : valor }
@@ -169,12 +199,12 @@ export default function Contratos() {
   }
 
   const [placaDatas, setPlacaDatas] = useState({})
+  const [placaFaces, setPlacaFaces] = useState({}) // {[placa_id]: 'AB' | 'A' | 'B'}
 
   const updatePlacaData = (placa_id, campo, valor) => {
     setPlacaDatas(prev => {
       const atual = prev[placa_id] || { data_inicio: '', data_fim: '', duracao_tipo: '3m' }
       const atualizado = { ...atual, [campo]: valor }
-      // Recalcula data_fim ao mudar check-in ou duração (se não for custom)
       const duracao = campo === 'duracao_tipo' ? valor : atualizado.duracao_tipo
       const inicio = campo === 'data_inicio' ? valor : atualizado.data_inicio
       if ((campo === 'data_inicio' || campo === 'duracao_tipo') && inicio && duracao !== 'custom') {
@@ -195,13 +225,13 @@ export default function Contratos() {
     if (c) {
       const placa_ids = (c.contrato_placas || []).map(cp => cp.placa_id)
       const formaParc = c.forma_parcelamento === 'parcelado' ? 'parcelado' : 'avista'
+      parcelasLockRef.current = true // contrato existente — bloquear regeneração até carregar do banco
       setForm({ ...FORM_VAZIO, ...c, placa_ids, forma_parcelamento: formaParc, num_parcelas: c.num_parcelas || 2 })
       // Carregar parcelas existentes (só relevante para parcelado)
       if (formaParc === 'parcelado') {
         const { data: parcsExist } = await supabase.from('parcelas').select('*').eq('contrato_id', c.id).order('numero')
         if (parcsExist && parcsExist.length > 0) {
           setParcelas(parcsExist)
-          parcelasInicializadasRef.current = true
         } else {
           const vt = c.valor_total || 0
           setParcelas(gerarParcelasContrato(vt, c.num_parcelas || 2, c.data_inicio))
@@ -210,6 +240,7 @@ export default function Contratos() {
         setParcelas([])
       }
     } else {
+      parcelasLockRef.current = false // novo contrato — permitir geração automática
       setForm(FORM_VAZIO)
       setParcelas([{ numero: 1, valor: 0, data_vencimento: '', status: 'pendente' }])
     }
@@ -225,6 +256,11 @@ export default function Contratos() {
     )
     setNovoCliente({ nome: '', telefone: '' })
     setCriandoCliente(false)
+    // Faces das placas (só relevante para duplas)
+    setPlacaFaces(c
+      ? Object.fromEntries((c.contrato_placas || []).map(cp => [cp.placa_id, cp.face || 'AB']))
+      : {}
+    )
     setModal(c ? 'editar' : 'novo')
   }
 
@@ -253,7 +289,9 @@ export default function Contratos() {
     const todasDatas = form.placa_ids.map(id => placaDatas[id] || {})
     const dataInicioContrato = todasDatas.map(d => d.data_inicio).filter(Boolean).sort()[0] || form.data_inicio
     const dataFimContrato = todasDatas.map(d => d.data_fim).filter(Boolean).sort().reverse()[0] || form.data_fim
-    const statusCalc = calcStatus(dataInicioContrato, dataFimContrato, form.status)
+    // Só valores aceitos pelo banco: 'ativo', 'encerrado', 'renovado', 'cancelado'
+    // Status dinâmicos (reservado/expirado/vencendo) são calculados em runtime, não armazenados
+    const statusCalc = ['encerrado', 'renovado', 'cancelado'].includes(form.status) ? form.status : 'ativo'
 
     const payload = {
       cliente_id: form.cliente_id || null,
@@ -279,6 +317,7 @@ export default function Contratos() {
       status_pagamento: form.status_pagamento,
       data_pagamento: form.forma_parcelamento === 'avista' ? (form.data_pagamento || null) : null,
       observacoes_pagamento: form.observacoes_pagamento,
+      permuta_descricao: form.forma_pagamento === 'permuta' ? (form.permuta_descricao || null) : null,
       historico: form.historico,
       status: statusCalc,
       observacoes: form.observacoes,
@@ -305,32 +344,44 @@ export default function Contratos() {
       // Placas
       const placasRel = form.placa_ids.map(placa_id => {
         const datas = placaDatas[placa_id] || {}
+        const face = placaFaces[placa_id] || 'AB'
         return {
-          contrato_id, placa_id, face: 'AB', valor_por_placa: valorPorPlaca,
+          contrato_id, placa_id, face, valor_por_placa: valorPorPlaca,
           data_inicio: datas.data_inicio || dataInicioContrato || null,
           data_fim: datas.data_fim || dataFimContrato || null,
         }
       })
       await supabase.from('contrato_placas').insert(placasRel)
 
-      // Parcelas — parcelado: N parcelas geradas; à vista pago: 1 parcela paga automática
-      const parcelasValidas = form.forma_parcelamento === 'parcelado'
-        ? parcelas.filter(p => p.data_vencimento)
-        : (form.status_pagamento === 'pago'
-            ? [{ numero: 1, valor: valorTotal, data_vencimento: form.data_pagamento || dataInicioContrato, status: 'paga', data_pagamento: form.data_pagamento || null }]
-            : [])
-      if (parcelasValidas.length > 0) {
-        const parcelasPayload = parcelasValidas.map(p => ({
+      // Parcelas
+      if (form.forma_parcelamento === 'parcelado') {
+        const parcelasValidas = parcelas.filter(p => p.data_vencimento)
+        if (parcelasValidas.length > 0) {
+          const parcelasPayload = parcelasValidas.map(p => ({
+            contrato_id,
+            numero: p.numero,
+            valor: p.valor,
+            data_vencimento: p.data_vencimento,
+            status: p.status || 'pendente',
+            observacoes: p.observacoes || null,
+            data_pagamento: p.data_pagamento || null,
+          }))
+          const { error: parcErr } = await supabase.from('parcelas').insert(parcelasPayload)
+          if (parcErr) console.warn('Erro ao salvar parcelas:', parcErr.message)
+        }
+      } else {
+        // À vista: cria 1 parcela para aparecer no financeiro e dashboard
+        const statusParcela = form.status_pagamento === 'pago' ? 'paga' : 'pendente'
+        const { error: avErr } = await supabase.from('parcelas').insert({
           contrato_id,
-          numero: p.numero,
-          valor: p.valor,
-          data_vencimento: p.data_vencimento,
-          status: p.status || 'pendente',
-          observacoes: p.observacoes || null,
-          data_pagamento: p.data_pagamento || null,
-        }))
-        const { error: parcErr } = await supabase.from('parcelas').insert(parcelasPayload)
-        if (parcErr) console.warn('Erro ao salvar parcelas:', parcErr.message)
+          numero: 1,
+          valor: valorTotal,
+          data_vencimento: form.data_pagamento || dataInicioContrato || null,
+          status: statusParcela,
+          data_pagamento: statusParcela === 'paga' ? (form.data_pagamento || null) : null,
+          observacoes: 'Pagamento à vista',
+        })
+        if (avErr) console.warn('Erro ao salvar parcela avista:', avErr.message)
       }
     }
 
@@ -345,11 +396,25 @@ export default function Contratos() {
     carregar()
   }
 
-  // Enriquece com status dinâmico calculado pelas datas
+  // Enriquece contratos com status dinâmico calculado pelas datas
   const contratosEnriquecidos = useMemo(() => contratos.map(c => ({
     ...c,
+    _tipo: 'contrato',
     status_calc: calcStatus(c.data_inicio, c.data_fim, c.status)
   })), [contratos])
+
+  // Enriquece comissões com status dinâmico (mesma lógica de datas)
+  const comissoesEnriquecidas = useMemo(() => comissoes.map(c => ({
+    ...c,
+    _tipo: 'comissao',
+    status_calc: calcStatus(c.data_inicio, c.data_fim, 'ativo')
+  })), [comissoes])
+
+  // Lista unificada: contratos + sublocações/comissões
+  const listaUnificada = useMemo(() => [
+    ...contratosEnriquecidos,
+    ...comissoesEnriquecidas,
+  ], [contratosEnriquecidos, comissoesEnriquecidas])
 
   const FILTROS = [
     ['todos', 'Todos'],
@@ -361,11 +426,11 @@ export default function Contratos() {
     ['cancelado', 'Cancelados'],
   ]
 
-  const contFiltrados = filtro === 'todos'
-    ? contratosEnriquecidos
+  const listaFiltrada = filtro === 'todos'
+    ? listaUnificada
     : filtro === 'encerrado'
-      ? contratosEnriquecidos.filter(c => c.status_calc === 'encerrado' || c.status_calc === 'expirado')
-      : contratosEnriquecidos.filter(c => c.status_calc === filtro)
+      ? listaUnificada.filter(c => c.status_calc === 'encerrado' || c.status_calc === 'expirado')
+      : listaUnificada.filter(c => c.status_calc === filtro)
 
   const valorTotal = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
   const custoTotal = Number(form.custo_colador) + Number(form.custo_impressao) + Number(form.custo_terreno_proporcional) + Number(form.custo_extra) + Number(form.valor_imposto)
@@ -382,13 +447,22 @@ export default function Contratos() {
       <PageHeader
         title="Contratos"
         sub={`${contratosEnriquecidos.filter(c => c.status_calc === 'ativo').length} ativos · ${contratosEnriquecidos.filter(c => c.status_calc === 'reservado').length} reservados`}
-        action={<Btn onClick={() => abrir()}>+ Novo contrato</Btn>}
+        action={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn onClick={() => abrirCom()} variant="secondary">🤝 Sublocação</Btn>
+            <Btn onClick={() => abrir()}>+ Novo contrato</Btn>
+          </div>
+        }
       />
 
       {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {FILTROS.map(([v, l]) => {
-          const count = v === 'todos' ? contratosEnriquecidos.length : contratosEnriquecidos.filter(c => c.status_calc === v).length
+          const count = v === 'todos'
+            ? listaUnificada.length
+            : v === 'encerrado'
+              ? listaUnificada.filter(c => c.status_calc === 'encerrado' || c.status_calc === 'expirado').length
+              : listaUnificada.filter(c => c.status_calc === v).length
           return (
             <button key={v} onClick={() => setFiltro(v)} style={{
               padding: '7px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
@@ -403,9 +477,59 @@ export default function Contratos() {
         })}
       </div>
 
-      {/* Lista */}
+      {/* Lista unificada (contratos + sublocações) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {contFiltrados.map(c => {
+        {listaFiltrada.map(c => {
+          if (c._tipo === 'comissao') {
+            // ── Card de Sublocação / Comissão ──────────────────────────
+            const stCor = STATUS_DINAMICO[c.status_calc] || STATUS_DINAMICO.ativo
+            return (
+              <div key={`com-${c.id}`} style={{
+                background: '#fff', borderRadius: 12,
+                border: '1px solid #E9D5FF',
+                padding: '16px 20px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a18', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {c.descricao}
+                      {c.tipo === 'troca_placa'
+                        ? <Badge texto="🔄 Sublocação" cor="#7C3AED" />
+                        : <Badge texto="💼 Comissão" cor="#0A5C42" />}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                      {c.tipo === 'troca_placa' ? (
+                        <>{c.clientes?.nome && <span>{c.clientes.nome} · </span>}Proprietário: {c.proprietario_placa || '-'} · Custo: {formatBRL((Number(c.custo_colagem)||0)+(Number(c.custo_impressao_troca)||0))}{Number(c.valor_recebido_troca) > 0 && <> · Recebido: {formatBRL(c.valor_recebido_troca)}</>}{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
+                      ) : (
+                        <>{c.clientes?.nome && <span>{c.clientes.nome} · </span>}Negociado: {formatBRL(c.valor_negociado)} · {c.percentual_comissao}%{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
+                      borderRadius: 20, fontSize: 11, fontWeight: 700,
+                      background: stCor.bg, color: stCor.text, border: `1px solid ${stCor.border}`
+                    }}>{stCor.label}</span>
+                    {c.tipo === 'troca_placa'
+                      ? <div style={{ fontSize: 15, fontWeight: 700, color: Number(c.valor_recebido_troca) > 0 ? '#15803d' : '#c0392b' }}>
+                          {Number(c.valor_recebido_troca) > 0
+                            ? `+ ${formatBRL(Number(c.valor_recebido_troca) - (Number(c.custo_colagem)||0) - (Number(c.custo_impressao_troca)||0))}`
+                            : `- ${formatBRL((Number(c.custo_colagem)||0)+(Number(c.custo_impressao_troca)||0))}`}
+                        </div>
+                      : <div style={{ fontSize: 15, fontWeight: 700, color: '#0A5C42' }}>{formatBRL(c.valor_comissao)}</div>
+                    }
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+                  <Btn onClick={() => abrirCom(c)} variant="secondary" size="sm">Editar</Btn>
+                  <Btn onClick={() => excluirCom(c.id)} variant="danger" size="sm">Remover</Btn>
+                </div>
+              </div>
+            )
+          }
+
+          // ── Card de Contrato (original) ────────────────────────────
           const st = c.status_calc
           const stCor = STATUS_DINAMICO[st] || STATUS_DINAMICO.ativo
           const dias = diasRestantes(c.data_fim)
@@ -448,6 +572,8 @@ export default function Contratos() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Badge texto={STATUS_PAGAMENTO[c.status_pagamento]?.label || c.status_pagamento} cor={STATUS_PAGAMENTO[c.status_pagamento]?.cor} />
+                  {c.forma_pagamento === 'permuta' && <Badge texto="🔄 Permuta" cor="#7C3AED" />}
+                  {c.forma_pagamento === 'cartao_credito' && <Badge texto="💳 Crédito" cor="#0284C7" />}
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
                     borderRadius: 20, fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
@@ -465,10 +591,153 @@ export default function Contratos() {
             </div>
           )
         })}
-        {contFiltrados.length === 0 && <div style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: 40 }}>Nenhum contrato encontrado.</div>}
+        {listaFiltrada.length === 0 && <div style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: 40 }}>Nenhum registro encontrado.</div>}
       </div>
 
-      {/* Modal */}
+      {/* ── [REMOVIDO: aba Comissões separada] ─────────────────────── */}
+      {false && (
+        <div>
+          {/* KPIs */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 24 }}>
+            <div style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', border: '1px solid #eee' }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase' }}>Total recebido</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#0A5C42' }}>{formatBRL(totalRecebidoCom)}</div>
+              {totalRecebidoTrocas > 0 && <div style={{ fontSize: 11, color: '#7C3AED', marginTop: 4 }}>incl. {formatBRL(totalRecebidoTrocas)} trocas</div>}
+            </div>
+            <div style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', border: '1px solid #eee' }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase' }}>Registros</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a18' }}>{comissoes.length}</div>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', border: '1px solid #eee' }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase' }}>Custo trocas</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#c0392b' }}>{formatBRL(custoTrocas)}</div>
+              <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>{totalTrocas} troca{totalTrocas !== 1 ? 's' : ''}</div>
+            </div>
+          </div>
+
+          {/* Lista */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {comissoes.map(c => (
+              <div key={c.id} style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: '16px 20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a18', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {c.descricao}
+                      {c.tipo === 'troca_placa'
+                        ? <Badge texto="🔄 Troca de Placa" cor="#7C3AED" />
+                        : <Badge texto="💼 Comissão" cor="#0A5C42" />}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                      {c.tipo === 'troca_placa' ? (
+                        <>{c.clientes?.nome && <span>{c.clientes.nome} · </span>}Proprietário: {c.proprietario_placa || '-'} · Custo colagem: {formatBRL(c.custo_colagem)} · Impressão: {formatBRL(c.custo_impressao_troca)}{Number(c.valor_recebido_troca) > 0 && <> · Recebido: {formatBRL(c.valor_recebido_troca)}</>}{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
+                      ) : (
+                        <>{c.clientes?.nome && <span>{c.clientes.nome} · </span>}Negociado: {formatBRL(c.valor_negociado)} · {c.percentual_comissao}% = {formatBRL(c.valor_comissao)}{c.data_inicio && <span> · {formatDate(c.data_inicio)} → {formatDate(c.data_fim)}</span>}</>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {c.tipo !== 'troca_placa' && (
+                      <Badge
+                        texto={c.status_pagamento === 'pago' ? 'Pago' : c.status_pagamento === 'atrasado' ? 'Atrasado' : 'Aguardando'}
+                        cor={c.status_pagamento === 'pago' ? 'verde' : c.status_pagamento === 'atrasado' ? 'vermelho' : 'amarelo'}
+                      />
+                    )}
+                    {c.tipo === 'troca_placa'
+                      ? <div style={{ fontSize: 15, fontWeight: 700, color: Number(c.valor_recebido_troca) > 0 ? '#15803d' : '#c0392b' }}>
+                          {Number(c.valor_recebido_troca) > 0
+                            ? `+ ${formatBRL(Number(c.valor_recebido_troca) - (Number(c.custo_colagem)||0) - (Number(c.custo_impressao_troca)||0))}`
+                            : `- ${formatBRL((Number(c.custo_colagem)||0)+(Number(c.custo_impressao_troca)||0))}`}
+                        </div>
+                      : <div style={{ fontSize: 15, fontWeight: 700, color: '#0A5C42' }}>{formatBRL(c.valor_comissao)}</div>
+                    }
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+                  <Btn onClick={() => abrirCom(c)} variant="secondary" size="sm">Editar</Btn>
+                  <Btn onClick={() => excluirCom(c.id)} variant="danger" size="sm">Remover</Btn>
+                </div>
+              </div>
+            ))}
+            {comissoes.length === 0 && <div style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: 40 }}>Nenhuma comissão registrada.</div>}
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Comissão ──────────────────────────────────────────── */}
+      {modalCom && (
+        <Modal title={modalCom === 'novo' ? 'Nova Comissão / Troca' : 'Editar Comissão / Troca'} onClose={() => setModalCom(null)}>
+          <Select label="Tipo" value={formCom.tipo || 'comissao'} onChange={v => setCom('tipo', v)} options={[
+            { value: 'comissao', label: '💼 Comissão (placa de terceiro)' },
+            { value: 'troca_placa', label: '🔄 Troca de Placa' },
+          ]} />
+          <Input label="Descrição" value={formCom.descricao} onChange={v => setCom('descricao', v)} required />
+
+          {formCom.tipo === 'troca_placa' ? (
+            <>
+              <Select label="Cliente" value={formCom.cliente_id || ''} onChange={v => setCom('cliente_id', v)} options={[
+                { value: '', label: 'Sem cliente' },
+                ...clientes.map(c => ({ value: c.id, label: c.nome }))
+              ]} />
+              <Input label="Proprietário da placa" value={formCom.proprietario_placa || ''} onChange={v => setCom('proprietario_placa', v)} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <Input label="Custo de colagem (R$)" value={formCom.custo_colagem || 0} onChange={v => setCom('custo_colagem', Number(v))} type="number" />
+                <Input label="Custo de impressão (R$)" value={formCom.custo_impressao_troca || 0} onChange={v => setCom('custo_impressao_troca', Number(v))} type="number" />
+                <Input label="Período início" value={formCom.data_inicio || ''} onChange={v => setCom('data_inicio', v)} type="date" />
+                <Input label="Período fim" value={formCom.data_fim || ''} onChange={v => setCom('data_fim', v)} type="date" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <Input label="Valor recebido do cliente (R$)" value={formCom.valor_recebido_troca || 0} onChange={v => setCom('valor_recebido_troca', Number(v))} type="number" />
+                <Select label="Status pagamento" value={formCom.status_pagamento || 'aguardando'} onChange={v => setCom('status_pagamento', v)} options={[
+                  { value: 'aguardando', label: 'Aguardando' },
+                  { value: 'pago', label: 'Pago' },
+                  { value: 'atrasado', label: 'Atrasado' },
+                ]} />
+              </div>
+              {formCom.status_pagamento === 'pago' && <Input label="Data do recebimento" value={formCom.data_pagamento || ''} onChange={v => setCom('data_pagamento', v)} type="date" />}
+              <div style={{ background: '#FFF1F0', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, fontWeight: 600, color: '#9A0000' }}>
+                Custo total da troca: {formatBRL((Number(formCom.custo_colagem)||0) + (Number(formCom.custo_impressao_troca)||0))}
+                {Number(formCom.valor_recebido_troca) > 0 && <span style={{ color: '#15803d', marginLeft: 16 }}>· Lucro: {formatBRL(Number(formCom.valor_recebido_troca) - (Number(formCom.custo_colagem)||0) - (Number(formCom.custo_impressao_troca)||0))}</span>}
+              </div>
+            </>
+          ) : (
+            <>
+              <Select label="Cliente" value={formCom.cliente_id || ''} onChange={v => setCom('cliente_id', v)} options={[
+                { value: '', label: 'Sem cliente' },
+                ...clientes.map(c => ({ value: c.id, label: c.nome }))
+              ]} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <Input label="Valor total negociado (R$)" value={formCom.valor_negociado} onChange={v => setCom('valor_negociado', Number(v))} type="number" />
+                <Input label="Comissão (%)" value={formCom.percentual_comissao} onChange={v => setCom('percentual_comissao', Number(v))} type="number" />
+                <Input label="Período início" value={formCom.data_inicio || ''} onChange={v => setCom('data_inicio', v)} type="date" />
+                <Input label="Período fim" value={formCom.data_fim || ''} onChange={v => setCom('data_fim', v)} type="date" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <Select label="Status pagamento" value={formCom.status_pagamento || 'aguardando'} onChange={v => setCom('status_pagamento', v)} options={[
+                  { value: 'aguardando', label: 'Aguardando' },
+                  { value: 'pago', label: 'Pago' },
+                  { value: 'atrasado', label: 'Atrasado' },
+                ]} />
+                {formCom.status_pagamento === 'pago' && <Input label="Data do pagamento" value={formCom.data_pagamento || ''} onChange={v => setCom('data_pagamento', v)} type="date" />}
+              </div>
+              <div style={{ background: '#EAF3DE', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, fontWeight: 600, color: '#27500A' }}>
+                Sua comissão: {formatBRL(formCom.valor_negociado * formCom.percentual_comissao / 100)}
+              </div>
+            </>
+          )}
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 500, color: '#555', display: 'block', marginBottom: 4 }}>Observações</label>
+            <textarea value={formCom.observacoes || ''} onChange={e => setCom('observacoes', e.target.value)} rows={2}
+              style={{ width: '100%', padding: '9px 11px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Btn onClick={() => setModalCom(null)} variant="secondary">Cancelar</Btn>
+            <Btn onClick={salvarCom} disabled={salvandoCom}>{salvandoCom ? 'Salvando...' : 'Salvar'}</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal Contrato */}
       {modal && (
         <Modal title={modal === 'novo' ? 'Novo Contrato' : 'Editar Contrato'} onClose={() => setModal(null)} width={680}>
 
@@ -499,7 +768,22 @@ export default function Contratos() {
                   <input type="checkbox" checked={form.placa_ids.includes(p.id)} onChange={() => togglePlaca(p.id)} />
                   <div>
                     <div>{p.nome}</div>
-                    <div style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>{p.tipo === 'dupla' ? '18x3m' : '9x3m'}</div>
+                    <div style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>{p.tipo === 'dupla' ? '18x3m • dupla face' : '9x3m'}</div>
+                    {p.tipo === 'dupla' && (() => {
+                      const facesEmUso = contratos
+                        .filter(c => calcStatus(c.data_inicio, c.data_fim, c.status) === 'ativo' && c.id !== form.id)
+                        .flatMap(c => (c.contrato_placas || []))
+                        .filter(cp => cp.placa_id === p.id)
+                        .map(cp => cp.face || 'AB')
+                      const aOcup = facesEmUso.some(f => f === 'A' || f === 'AB')
+                      const bOcup = facesEmUso.some(f => f === 'B' || f === 'AB')
+                      if (!aOcup && !bOcup) return null
+                      return <div style={{ fontSize: 10, marginTop: 2 }}>
+                        <span style={{ color: aOcup ? '#C2410C' : '#166534', fontWeight: 600 }}>Face A: {aOcup ? 'ocupada' : 'livre'}</span>
+                        {' · '}
+                        <span style={{ color: bOcup ? '#C2410C' : '#166534', fontWeight: 600 }}>Face B: {bOcup ? 'ocupada' : 'livre'}</span>
+                      </div>
+                    })()}
                   </div>
                 </label>
               ))}
@@ -523,11 +807,26 @@ export default function Contratos() {
                     const duracaoPlaca = datas.duracao_tipo || '3m'
                     return (
                       <div key={pid} style={{
-                        display: 'grid', gridTemplateColumns: '1fr 160px 140px 140px', gap: 10, alignItems: 'center',
+                        display: 'grid', gridTemplateColumns: '1fr 155px 135px 135px', gap: 10, alignItems: 'center',
                         background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid #DBEAFE'
                       }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a18' }}>
                           🪧 {placa?.nome || pid}
+                          {placa?.tipo === 'dupla' && (
+                            <div style={{ marginTop: 4 }}>
+                              <span style={{ fontSize: 10, color: '#1D4ED8', fontWeight: 600, marginRight: 6 }}>FACE:</span>
+                              {['AB','A','B'].map(f => (
+                                <button key={f} onClick={() => setPlacaFaces(prev => ({ ...prev, [pid]: f }))}
+                                  style={{ marginRight: 4, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                    border: `1.5px solid ${(placaFaces[pid]||'AB')===f ? '#1D4ED8' : '#ccc'}`,
+                                    background: (placaFaces[pid]||'AB')===f ? '#DBEAFE' : '#fff',
+                                    color: (placaFaces[pid]||'AB')===f ? '#1D4ED8' : '#666'
+                                  }}>
+                                  {f === 'AB' ? 'Dupla completa' : `Face ${f}`}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div>
                           <div style={{ fontSize: 10, color: '#1D4ED8', fontWeight: 600, marginBottom: 3 }}>Duração</div>
@@ -596,8 +895,6 @@ export default function Contratos() {
               ]} />
             </div>
 
-            <Input label="Data início" value={form.data_inicio} onChange={v => set('data_inicio', v)} type="date" required />
-            <Input label="Data fim" value={form.data_fim} onChange={v => set('data_fim', v)} type="date" required />
             <Select label="Modalidade" value={form.modalidade} onChange={v => set('modalidade', v)} options={[
               { value: 'veiculacao', label: 'Só veiculação' },
               { value: 'veiculacao_impressao', label: 'Veiculação + Impressão' },
@@ -642,8 +939,14 @@ export default function Contratos() {
                 { value: 'pix', label: 'Pix' },
                 { value: 'dinheiro', label: 'Dinheiro' },
                 { value: 'transferencia', label: 'Transferência' },
+                { value: 'cartao_credito', label: '💳 Cartão de Crédito' },
                 { value: 'boleto', label: 'Boleto' },
+                { value: 'permuta', label: '🔄 Permuta' },
               ]} />
+              {form.forma_pagamento === 'permuta' && (
+                <Input label="O que você recebe na permuta" value={form.permuta_descricao || ''} onChange={v => set('permuta_descricao', v)}
+                  style={{ gridColumn: '1 / -1' }} />
+              )}
               <Select label="Condição / Parcelamento" value={form.forma_parcelamento} onChange={v => { set('forma_parcelamento', v); if (v !== 'parcelado') setParcelas([]) }} options={FORMAS_PARCELAMENTO} />
               {form.forma_parcelamento === 'parcelado' && (
                 <Input label="Nº de parcelas" value={form.num_parcelas || 2} onChange={v => set('num_parcelas', Math.max(2, parseInt(v) || 2))} type="number" />
