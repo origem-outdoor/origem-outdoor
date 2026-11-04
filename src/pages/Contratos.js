@@ -17,7 +17,7 @@ const FORM_VAZIO = {
   forma_pagamento: 'pix',
   forma_parcelamento: 'avista',
   num_parcelas: 2,
-  status_pagamento: 'aguardando', data_pagamento: '', observacoes_pagamento: '', permuta_descricao: '',
+  status_pagamento: 'aguardando', data_pagamento: '', observacoes_pagamento: '',
   historico: false, status: 'ativo', observacoes: ''
 }
 
@@ -103,7 +103,6 @@ export default function Contratos() {
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(FORM_VAZIO)
   const [parcelas, setParcelas] = useState([])
-  const parcelasLockRef = React.useRef(false) // true = não regenerar (carregado do banco ou editado manualmente)
   const [salvando, setSalvando] = useState(false)
   const [filtro, setFiltro] = useState('ativo')
   const [novoCliente, setNovoCliente] = useState({ nome: '', telefone: '' })
@@ -136,17 +135,32 @@ export default function Contratos() {
     return novo
   })
 
-  // Recalcula parcelas quando mudam campos relevantes (só para modo parcelado)
+  // Recalcula parcelas apenas ao abrir modal novo ou mudar nº de parcelas
+  // NÃO recalcula se parcelas já foram editadas manualmente (vieram do banco ou foram ajustadas)
+  const parcelasInicializadasRef = React.useRef(false)
+  useEffect(() => {
+    if (!modal) { parcelasInicializadasRef.current = false; return }
+    if (form.forma_parcelamento !== 'parcelado') return
+    if (parcelasInicializadasRef.current) return  // já inicializado — não sobrescreve edições manuais
+    parcelasInicializadasRef.current = true
+    const vt = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
+    setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
+  }, [modal, form.forma_parcelamento])
+
+  // Regenera parcelas quando muda num_parcelas ou valor total (reset intencional)
+  const prevNumParcelas = React.useRef(form.num_parcelas)
   useEffect(() => {
     if (!modal) return
     if (form.forma_parcelamento !== 'parcelado') return
-    if (parcelasLockRef.current) return // parcelas carregadas do banco ou editadas manualmente — não sobrescrever
+    if (!parcelasInicializadasRef.current) return
     const vt = Number(form.valor_veiculacao) + Number(form.valor_arte) + Number(form.valor_impressao)
-    setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
-  }, [form.valor_veiculacao, form.valor_arte, form.valor_impressao, form.forma_parcelamento, form.num_parcelas, form.data_inicio, modal])
+    if (prevNumParcelas.current !== form.num_parcelas) {
+      prevNumParcelas.current = form.num_parcelas
+      setParcelas(gerarParcelasContrato(vt, form.num_parcelas, form.data_inicio))
+    }
+  }, [form.num_parcelas, form.valor_veiculacao, form.valor_arte, form.valor_impressao])
 
   const atualizarParcela = (idx, campo, valor) => {
-    parcelasLockRef.current = true // usuário editou manualmente — bloquear regeneração automática
     setParcelas(prev => {
       const novas = [...prev]
       novas[idx] = { ...novas[idx], [campo]: campo === 'valor' ? parseFloat(valor) || 0 : valor }
@@ -155,12 +169,12 @@ export default function Contratos() {
   }
 
   const [placaDatas, setPlacaDatas] = useState({})
-  const [placaFaces, setPlacaFaces] = useState({}) // {[placa_id]: 'AB' | 'A' | 'B'}
 
   const updatePlacaData = (placa_id, campo, valor) => {
     setPlacaDatas(prev => {
       const atual = prev[placa_id] || { data_inicio: '', data_fim: '', duracao_tipo: '3m' }
       const atualizado = { ...atual, [campo]: valor }
+      // Recalcula data_fim ao mudar check-in ou duração (se não for custom)
       const duracao = campo === 'duracao_tipo' ? valor : atualizado.duracao_tipo
       const inicio = campo === 'data_inicio' ? valor : atualizado.data_inicio
       if ((campo === 'data_inicio' || campo === 'duracao_tipo') && inicio && duracao !== 'custom') {
@@ -181,13 +195,13 @@ export default function Contratos() {
     if (c) {
       const placa_ids = (c.contrato_placas || []).map(cp => cp.placa_id)
       const formaParc = c.forma_parcelamento === 'parcelado' ? 'parcelado' : 'avista'
-      parcelasLockRef.current = true // contrato existente — bloquear regeneração até carregar do banco
       setForm({ ...FORM_VAZIO, ...c, placa_ids, forma_parcelamento: formaParc, num_parcelas: c.num_parcelas || 2 })
       // Carregar parcelas existentes (só relevante para parcelado)
       if (formaParc === 'parcelado') {
         const { data: parcsExist } = await supabase.from('parcelas').select('*').eq('contrato_id', c.id).order('numero')
         if (parcsExist && parcsExist.length > 0) {
           setParcelas(parcsExist)
+          parcelasInicializadasRef.current = true
         } else {
           const vt = c.valor_total || 0
           setParcelas(gerarParcelasContrato(vt, c.num_parcelas || 2, c.data_inicio))
@@ -196,7 +210,6 @@ export default function Contratos() {
         setParcelas([])
       }
     } else {
-      parcelasLockRef.current = false // novo contrato — permitir geração automática
       setForm(FORM_VAZIO)
       setParcelas([{ numero: 1, valor: 0, data_vencimento: '', status: 'pendente' }])
     }
@@ -212,11 +225,6 @@ export default function Contratos() {
     )
     setNovoCliente({ nome: '', telefone: '' })
     setCriandoCliente(false)
-    // Faces das placas (só relevante para duplas)
-    setPlacaFaces(c
-      ? Object.fromEntries((c.contrato_placas || []).map(cp => [cp.placa_id, cp.face || 'AB']))
-      : {}
-    )
     setModal(c ? 'editar' : 'novo')
   }
 
@@ -245,9 +253,7 @@ export default function Contratos() {
     const todasDatas = form.placa_ids.map(id => placaDatas[id] || {})
     const dataInicioContrato = todasDatas.map(d => d.data_inicio).filter(Boolean).sort()[0] || form.data_inicio
     const dataFimContrato = todasDatas.map(d => d.data_fim).filter(Boolean).sort().reverse()[0] || form.data_fim
-    // Só valores aceitos pelo banco: 'ativo', 'encerrado', 'renovado', 'cancelado'
-    // Status dinâmicos (reservado/expirado/vencendo) são calculados em runtime, não armazenados
-    const statusCalc = ['encerrado', 'renovado', 'cancelado'].includes(form.status) ? form.status : 'ativo'
+    const statusCalc = calcStatus(dataInicioContrato, dataFimContrato, form.status)
 
     const payload = {
       cliente_id: form.cliente_id || null,
@@ -273,7 +279,6 @@ export default function Contratos() {
       status_pagamento: form.status_pagamento,
       data_pagamento: form.forma_parcelamento === 'avista' ? (form.data_pagamento || null) : null,
       observacoes_pagamento: form.observacoes_pagamento,
-      permuta_descricao: form.forma_pagamento === 'permuta' ? (form.permuta_descricao || null) : null,
       historico: form.historico,
       status: statusCalc,
       observacoes: form.observacoes,
@@ -300,44 +305,32 @@ export default function Contratos() {
       // Placas
       const placasRel = form.placa_ids.map(placa_id => {
         const datas = placaDatas[placa_id] || {}
-        const face = placaFaces[placa_id] || 'AB'
         return {
-          contrato_id, placa_id, face, valor_por_placa: valorPorPlaca,
+          contrato_id, placa_id, face: 'AB', valor_por_placa: valorPorPlaca,
           data_inicio: datas.data_inicio || dataInicioContrato || null,
           data_fim: datas.data_fim || dataFimContrato || null,
         }
       })
       await supabase.from('contrato_placas').insert(placasRel)
 
-      // Parcelas
-      if (form.forma_parcelamento === 'parcelado') {
-        const parcelasValidas = parcelas.filter(p => p.data_vencimento)
-        if (parcelasValidas.length > 0) {
-          const parcelasPayload = parcelasValidas.map(p => ({
-            contrato_id,
-            numero: p.numero,
-            valor: p.valor,
-            data_vencimento: p.data_vencimento,
-            status: p.status || 'pendente',
-            observacoes: p.observacoes || null,
-            data_pagamento: p.data_pagamento || null,
-          }))
-          const { error: parcErr } = await supabase.from('parcelas').insert(parcelasPayload)
-          if (parcErr) console.warn('Erro ao salvar parcelas:', parcErr.message)
-        }
-      } else {
-        // À vista: cria 1 parcela para aparecer no financeiro e dashboard
-        const statusParcela = form.status_pagamento === 'pago' ? 'paga' : 'pendente'
-        const { error: avErr } = await supabase.from('parcelas').insert({
+      // Parcelas — parcelado: N parcelas geradas; à vista pago: 1 parcela paga automática
+      const parcelasValidas = form.forma_parcelamento === 'parcelado'
+        ? parcelas.filter(p => p.data_vencimento)
+        : (form.status_pagamento === 'pago'
+            ? [{ numero: 1, valor: valorTotal, data_vencimento: form.data_pagamento || dataInicioContrato, status: 'paga', data_pagamento: form.data_pagamento || null }]
+            : [])
+      if (parcelasValidas.length > 0) {
+        const parcelasPayload = parcelasValidas.map(p => ({
           contrato_id,
-          numero: 1,
-          valor: valorTotal,
-          data_vencimento: form.data_pagamento || dataInicioContrato || null,
-          status: statusParcela,
-          data_pagamento: statusParcela === 'paga' ? (form.data_pagamento || null) : null,
-          observacoes: 'Pagamento à vista',
-        })
-        if (avErr) console.warn('Erro ao salvar parcela avista:', avErr.message)
+          numero: p.numero,
+          valor: p.valor,
+          data_vencimento: p.data_vencimento,
+          status: p.status || 'pendente',
+          observacoes: p.observacoes || null,
+          data_pagamento: p.data_pagamento || null,
+        }))
+        const { error: parcErr } = await supabase.from('parcelas').insert(parcelasPayload)
+        if (parcErr) console.warn('Erro ao salvar parcelas:', parcErr.message)
       }
     }
 
@@ -455,8 +448,6 @@ export default function Contratos() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Badge texto={STATUS_PAGAMENTO[c.status_pagamento]?.label || c.status_pagamento} cor={STATUS_PAGAMENTO[c.status_pagamento]?.cor} />
-                  {c.forma_pagamento === 'permuta' && <Badge texto="🔄 Permuta" cor="#7C3AED" />}
-                  {c.forma_pagamento === 'cartao_credito' && <Badge texto="💳 Crédito" cor="#0284C7" />}
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
                     borderRadius: 20, fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
@@ -508,22 +499,7 @@ export default function Contratos() {
                   <input type="checkbox" checked={form.placa_ids.includes(p.id)} onChange={() => togglePlaca(p.id)} />
                   <div>
                     <div>{p.nome}</div>
-                    <div style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>{p.tipo === 'dupla' ? '18x3m • dupla face' : '9x3m'}</div>
-                    {p.tipo === 'dupla' && (() => {
-                      const facesEmUso = contratos
-                        .filter(c => calcStatus(c.data_inicio, c.data_fim, c.status) === 'ativo' && c.id !== form.id)
-                        .flatMap(c => (c.contrato_placas || []))
-                        .filter(cp => cp.placa_id === p.id)
-                        .map(cp => cp.face || 'AB')
-                      const aOcup = facesEmUso.some(f => f === 'A' || f === 'AB')
-                      const bOcup = facesEmUso.some(f => f === 'B' || f === 'AB')
-                      if (!aOcup && !bOcup) return null
-                      return <div style={{ fontSize: 10, marginTop: 2 }}>
-                        <span style={{ color: aOcup ? '#C2410C' : '#166534', fontWeight: 600 }}>Face A: {aOcup ? 'ocupada' : 'livre'}</span>
-                        {' · '}
-                        <span style={{ color: bOcup ? '#C2410C' : '#166534', fontWeight: 600 }}>Face B: {bOcup ? 'ocupada' : 'livre'}</span>
-                      </div>
-                    })()}
+                    <div style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>{p.tipo === 'dupla' ? '18x3m' : '9x3m'}</div>
                   </div>
                 </label>
               ))}
@@ -547,26 +523,11 @@ export default function Contratos() {
                     const duracaoPlaca = datas.duracao_tipo || '3m'
                     return (
                       <div key={pid} style={{
-                        display: 'grid', gridTemplateColumns: '1fr 155px 135px 135px', gap: 10, alignItems: 'center',
+                        display: 'grid', gridTemplateColumns: '1fr 160px 140px 140px', gap: 10, alignItems: 'center',
                         background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid #DBEAFE'
                       }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a18' }}>
                           🪧 {placa?.nome || pid}
-                          {placa?.tipo === 'dupla' && (
-                            <div style={{ marginTop: 4 }}>
-                              <span style={{ fontSize: 10, color: '#1D4ED8', fontWeight: 600, marginRight: 6 }}>FACE:</span>
-                              {['AB','A','B'].map(f => (
-                                <button key={f} onClick={() => setPlacaFaces(prev => ({ ...prev, [pid]: f }))}
-                                  style={{ marginRight: 4, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                                    border: `1.5px solid ${(placaFaces[pid]||'AB')===f ? '#1D4ED8' : '#ccc'}`,
-                                    background: (placaFaces[pid]||'AB')===f ? '#DBEAFE' : '#fff',
-                                    color: (placaFaces[pid]||'AB')===f ? '#1D4ED8' : '#666'
-                                  }}>
-                                  {f === 'AB' ? 'Dupla completa' : `Face ${f}`}
-                                </button>
-                              ))}
-                            </div>
-                          )}
                         </div>
                         <div>
                           <div style={{ fontSize: 10, color: '#1D4ED8', fontWeight: 600, marginBottom: 3 }}>Duração</div>
@@ -635,6 +596,8 @@ export default function Contratos() {
               ]} />
             </div>
 
+            <Input label="Data início" value={form.data_inicio} onChange={v => set('data_inicio', v)} type="date" required />
+            <Input label="Data fim" value={form.data_fim} onChange={v => set('data_fim', v)} type="date" required />
             <Select label="Modalidade" value={form.modalidade} onChange={v => set('modalidade', v)} options={[
               { value: 'veiculacao', label: 'Só veiculação' },
               { value: 'veiculacao_impressao', label: 'Veiculação + Impressão' },
@@ -679,14 +642,8 @@ export default function Contratos() {
                 { value: 'pix', label: 'Pix' },
                 { value: 'dinheiro', label: 'Dinheiro' },
                 { value: 'transferencia', label: 'Transferência' },
-                { value: 'cartao_credito', label: '💳 Cartão de Crédito' },
                 { value: 'boleto', label: 'Boleto' },
-                { value: 'permuta', label: '🔄 Permuta' },
               ]} />
-              {form.forma_pagamento === 'permuta' && (
-                <Input label="O que você recebe na permuta" value={form.permuta_descricao || ''} onChange={v => set('permuta_descricao', v)}
-                  style={{ gridColumn: '1 / -1' }} />
-              )}
               <Select label="Condição / Parcelamento" value={form.forma_parcelamento} onChange={v => { set('forma_parcelamento', v); if (v !== 'parcelado') setParcelas([]) }} options={FORMAS_PARCELAMENTO} />
               {form.forma_parcelamento === 'parcelado' && (
                 <Input label="Nº de parcelas" value={form.num_parcelas || 2} onChange={v => set('num_parcelas', Math.max(2, parseInt(v) || 2))} type="number" />
