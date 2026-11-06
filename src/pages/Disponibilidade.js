@@ -77,14 +77,26 @@ const STATUS_LABEL = {
   manutencao: { emoji: '🔧', label: 'Manutenção', bg: '#FFF3E0', text: '#E65100', border: '#FFCC80' },
 }
 
-function PlacaCard({ p, onCreateContrato }) {
+function PlacaCard({ p, onCreateContrato, selecionada, onToggle }) {
   const st = STATUS_LABEL[p.tipo] || STATUS_LABEL.livre
   const isPreste = p.preste
   const cardBg = isPreste ? '#FFFBEB' : st.bg
   const cardBorder = isPreste ? '#FCD34D' : st.border
   const cardText = isPreste ? '#B45309' : st.text
   return (
-    <div style={{ background: cardBg, borderRadius: 14, border: `1.5px solid ${cardBorder}`, padding: '16px 18px' }}>
+    <div
+      onClick={onToggle ? () => onToggle(p.id) : undefined}
+      style={{ background: cardBg, borderRadius: 14, border: selecionada ? '2.5px solid #1565C0' : `1.5px solid ${cardBorder}`, padding: '16px 18px', cursor: onToggle ? 'pointer' : 'default', position: 'relative', boxShadow: selecionada ? '0 0 0 3px rgba(21,101,192,0.15)' : 'none' }}>
+      {onToggle && (
+        <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 2 }} onClick={e => { e.stopPropagation(); onToggle(p.id) }}>
+          <div style={{ width: 20, height: 20, borderRadius: 5, border: '2px solid', borderColor: selecionada ? '#1565C0' : '#bbb', background: selecionada ? '#1565C0' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {selecionada && <span style={{ color: '#fff', fontSize: 12, fontWeight: 900, lineHeight: 1 }}>✓</span>}
+          </div>
+        </div>
+      )}
+      {p.foto_url && (
+        <img src={p.foto_url} alt={p.nome} style={{ width: '100%', height: 130, objectFit: 'cover', borderRadius: 8, marginBottom: 10, display: 'block' }} />
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a18' }}>{p.nome}</div>
@@ -142,11 +154,62 @@ export default function Disponibilidade({ setPage }) {
   const [periodoInicio, setPeriodoInicio] = useState('')
   const [periodoFim, setPeriodoFim] = useState('')
 
+  const [selecionadas, setSelecionadas] = useState(new Set())
+
+  function toggleSelecao(id) {
+    setSelecionadas(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function gerarPDFSelecao() {
+    const pIniAtual = buscado ? periodoAtual.inicio : ''
+    const pFimAtual = buscado ? periodoAtual.fim : ''
+    const titulo = pIniAtual
+      ? `Placas disponíveis — ${new Date(pIniAtual + 'T00:00:00').toLocaleDateString('pt-BR')}${pFimAtual ? ' a ' + new Date(pFimAtual + 'T00:00:00').toLocaleDateString('pt-BR') : ''}`
+      : 'Placas disponíveis'
+    const placasEscolhidas = placasComStatus.filter(p => selecionadas.has(p.id))
+    const linhas = placasEscolhidas.map(p => `
+      <div class="card">
+        ${p.foto_url ? `<img src="${p.foto_url}" alt="${(p.nome || '').replace(/"/g, '')}" />` : '<div class="sem-foto">Sem foto</div>'}
+        <div class="card-info">
+          <div class="card-nome">${p.nome || ''}</div>
+          ${p.endereco ? `<div class="card-end">📍 ${p.endereco}</div>` : ''}
+        </div>
+      </div>`).join('')
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${titulo}</title>
+<style>
+  body { font-family: Arial,sans-serif; margin:0; padding:20px; color:#1a1a18; }
+  h1 { font-size:17px; font-weight:700; text-align:center; margin-bottom:20px; color:#1a3a1a; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .card { border:1px solid #ddd; border-radius:10px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; }
+  .card img { width:100%; height:160px; object-fit:cover; display:block; }
+  .card-info { padding:10px 12px; }
+  .card-nome { font-weight:700; font-size:14px; }
+  .card-end { font-size:12px; color:#555; margin-top:4px; }
+  .sem-foto { width:100%; height:160px; background:#f4f4f4; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:13px; }
+  @media print { @page { margin:12mm; size:A4; } body { padding:0; } }
+</style></head><body>
+<h1>🪧 ${titulo}</h1>
+<div class="grid">${linhas}</div>
+<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>
+</body></html>`
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close() }
+  }
+
+  // Limpa seleção ao fazer nova busca
+  useEffect(() => { setSelecionadas(new Set()) }, [buscado])
+
   useEffect(() => {
     async function carregar() {
       const [pl, co] = await Promise.all([
         // Busca todas as placas sem filtro (evita bug PostgREST com NULL), filtra inativas no JS
-        supabase.from('placas').select('id, nome, tipo, endereco, status'),
+        supabase.from('placas').select('id, nome, tipo, endereco, status, foto_url'),
         supabase.from('contratos')
           .select('id, placa_id, data_inicio, data_fim, status, clientes(nome), contrato_placas(placa_id, data_inicio, data_fim)')
           .not('data_inicio', 'is', null)
@@ -376,7 +439,7 @@ export default function Disponibilidade({ setPage }) {
             <section style={{ marginBottom: 32 }}>
               <h3 style={{ fontSize: 15, fontWeight: 700, color: '#2E7D32', marginBottom: 12 }}>✅ Placas Disponíveis ({livres.length})</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-                {livres.map(p => <PlacaCard key={p.id} p={p} onCreateContrato={setPage ? () => setPage('contratos') : null} />)}
+                {livres.map(p => <PlacaCard key={p.id} p={p} onCreateContrato={setPage ? () => setPage('contratos') : null} selecionada={selecionadas.has(p.id)} onToggle={toggleSelecao} />)}
               </div>
             </section>
           )}
@@ -388,7 +451,7 @@ export default function Disponibilidade({ setPage }) {
                 Contrato termina até {dataLimite5 ? new Date(dataLimite5 + 'T00:00:00').toLocaleDateString('pt-BR') : ''} — até 5 dias após o início do período.
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-                {prestesALiberar.map(p => <PlacaCard key={p.id} p={p} />)}
+                {prestesALiberar.map(p => <PlacaCard key={p.id} p={p} selecionada={selecionadas.has(p.id)} onToggle={toggleSelecao} />)}
               </div>
             </section>
           )}
@@ -409,6 +472,19 @@ export default function Disponibilidade({ setPage }) {
             </div>
           )}
         </>
+      )}
+
+      {/* Botão flutuante Gerar PDF */}
+      {selecionadas.size > 0 && (
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 100 }}>
+          <button
+            onClick={gerarPDFSelecao}
+            style={{ padding: '14px 22px', borderRadius: 14, border: 'none', background: '#1565C0', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', boxShadow: '0 4px 16px rgba(21,101,192,0.4)', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }}
+          >
+            📄 Gerar PDF
+            <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '2px 9px', fontSize: 13 }}>{selecionadas.size}</span>
+          </button>
+        </div>
       )}
     </div>
   )
