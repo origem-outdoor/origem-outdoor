@@ -96,12 +96,20 @@ function PlacaCard({ p, onCreateContrato }) {
       <div style={{ display: 'inline-flex', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,0.6)', color: cardText, border: `1px solid ${cardBorder}`, marginBottom: 10 }}>
         {p.semJanela
           ? `🔵 Janela insuficiente · próx. contrato ${new Date(p.proximaData + 'T00:00:00').toLocaleDateString('pt-BR')}`
-          : isPreste ? `${st.label} · libera ${new Date(p.cFim + 'T00:00:00').toLocaleDateString('pt-BR')}` : st.label}
+          : isPreste ? `${st.label} · libera ${new Date(p.cFim + 'T00:00:00').toLocaleDateString('pt-BR')}`
+          : (p.tipo === 'livre' && p.proximaData) ? `✅ Disponível · reservada a partir de ${new Date(p.proximaData + 'T00:00:00').toLocaleDateString('pt-BR')}`
+          : st.label}
       </div>
       {p.semJanela && (
         <div style={{ fontSize: 12, background: 'rgba(255,255,255,0.5)', borderRadius: 8, padding: '6px 10px', marginBottom: 8, color: '#5E35B1' }}>
           <div style={{ fontWeight: 700 }}>⚠️ Apenas {p.diasLivres} dia{p.diasLivres !== 1 ? 's' : ''} livre{p.diasLivres !== 1 ? 's' : ''} (mín. {MIN_LOCACAO_DIAS})</div>
           <div style={{ opacity: 0.85 }}>Próx. reserva: {new Date(p.proximaData + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
+        </div>
+      )}
+      {p.tipo === 'livre' && p.proximaData && (
+        <div style={{ fontSize: 12, background: 'rgba(255,255,255,0.5)', borderRadius: 8, padding: '6px 10px', marginBottom: 8, color: '#1565C0' }}>
+          <div style={{ fontWeight: 700 }}>📅 Próxima reserva: {new Date(p.proximaData + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
+          {p.proximoContrato?.clientes?.nome && <div style={{ opacity: 0.85 }}>👤 {p.proximoContrato.clientes.nome}</div>}
         </div>
       )}
       {!p.semJanela && p.contrato && (
@@ -242,7 +250,7 @@ export default function Disponibilidade({ setPage }) {
           }
         }
       }
-      return { tipo: 'livre', contrato: null, cFim: null }
+      return { tipo: 'livre', contrato: null, cFim: null, proximaData: proximo?.data_inicio || null, proximoContrato: proximo?.contrato || null }
     }
     const hoje = new Date().toISOString().split('T')[0]
     const tipo = conflito.contrato.data_inicio > hoje ? 'reservada' : 'ocupada'
