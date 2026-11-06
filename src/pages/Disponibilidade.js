@@ -143,7 +143,7 @@ export default function Disponibilidade({ setPage }) {
           .select('id, placa_id, data_inicio, data_fim, status, clientes(nome), contrato_placas(placa_id, data_inicio, data_fim)')
           .not('data_inicio', 'is', null)
           .not('data_fim', 'is', null)
-          .not('status', 'in', '("encerrado","cancelado","renovado")'),
+          .or('status.is.null,status.not.in.(encerrado,cancelado,renovado)'),
       ])
       const placasAtivas = (pl.data || []).filter(p => p.status !== 'inativa')
       setPlacas(placasAtivas)
