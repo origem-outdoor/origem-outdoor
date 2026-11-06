@@ -157,9 +157,11 @@ export default function Disponibilidade({ setPage }) {
     ? { inicio: BISEMANAS[bissemanaSel]?.inicio || '', fim: BISEMANAS[bissemanaSel]?.fim || '' }
     : { inicio: periodoInicio, fim: periodoFim }
 
-  const canSearch = !!(periodoAtual.inicio && periodoAtual.fim)
+  const canSearch = !!(periodoAtual.inicio)
 
   const getContratoConflito = (placa, pIni, pFim) => {
+    // Quando pFim vazio (só inicio preenchido), verifica conflito pontual no pIni
+    const pFimEfetivo = pFim || pIni
     // Coleta TODOS os conflitos e retorna o mais relevante:
     // 1º ativo hoje, 2º mais recente (maior data_inicio)
     const hoje = new Date().toISOString().split('T')[0]
@@ -170,7 +172,7 @@ export default function Disponibilidade({ setPage }) {
         for (const cp of cpEntries) {
           const cIni = cp.data_inicio || c.data_inicio
           const cFim = cp.data_fim || c.data_fim
-          if (cIni <= pFim && cFim >= pIni) {
+          if (cIni <= pFimEfetivo && cFim >= pIni) {
             const candidato = { contrato: c, cFim, cIni }
             if (!melhor) { melhor = candidato; continue }
             const ativoAgora = cIni <= hoje && cFim >= hoje
@@ -180,7 +182,7 @@ export default function Disponibilidade({ setPage }) {
           }
         }
       } else if (c.placa_id === placa.id) {
-        if (c.data_inicio <= pFim && c.data_fim >= pIni) {
+        if (c.data_inicio <= pFimEfetivo && c.data_fim >= pIni) {
           const candidato = { contrato: c, cFim: c.data_fim, cIni: c.data_inicio }
           if (!melhor) { melhor = candidato; continue }
           const ativoAgora = c.data_inicio <= hoje && c.data_fim >= hoje
@@ -220,6 +222,7 @@ export default function Disponibilidade({ setPage }) {
     const conflito = getContratoConflito(placa, pIni, pFim)
     if (!conflito) {
       // Placa livre no período — verifica se tem janela mínima de MIN_LOCACAO_DIAS
+      if (!pFim) return { tipo: 'livre', contrato: null, cFim: null }
       const hoje = new Date().toISOString().split('T')[0]
       const ref = pIni > hoje ? pIni : hoje   // referência: mais tarde entre hoje e início do período
       const proximo = getProximoContratoApos(placa, pFim)
@@ -321,7 +324,7 @@ export default function Disponibilidade({ setPage }) {
               style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14 }} />
           </div>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Data fim</label>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Data fim <span style={{ fontWeight: 400, color: '#aaa' }}>(opcional)</span></label>
             <input type="date" value={periodoFim} onChange={e => { setPeriodoFim(e.target.value); setBuscado(false) }}
               style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14 }} />
           </div>
