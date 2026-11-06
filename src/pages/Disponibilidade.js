@@ -222,10 +222,10 @@ export default function Disponibilidade({ setPage }) {
     const conflito = getContratoConflito(placa, pIni, pFim)
     if (!conflito) {
       // Placa livre no período — verifica se tem janela mínima de MIN_LOCACAO_DIAS
-      if (!pFim) return { tipo: 'livre', contrato: null, cFim: null }
       const hoje = new Date().toISOString().split('T')[0]
       const ref = pIni > hoje ? pIni : hoje   // referência: mais tarde entre hoje e início do período
-      const proximo = getProximoContratoApos(placa, pFim)
+      // Quando pFim vazio: busca próximo contrato após pIni; quando preenchido: após pFim
+      const proximo = getProximoContratoApos(placa, pFim || pIni)
       if (proximo) {
         const diasLivres = Math.round(
           (new Date(proximo.data_inicio + 'T00:00:00') - new Date(ref + 'T00:00:00')) / 86400000
