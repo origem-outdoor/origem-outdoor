@@ -207,7 +207,7 @@ export default function Disponibilidade({ setPage }) {
         '.card-nome { font-weight:800; font-size:24px; margin-bottom:8px; color:#111; }' +
         '.card-end { font-size:16px; color:#555; line-height:1.5; }' +
         '.sem-foto { flex:1; background:#f4f4f4; display:flex; align-items:center; justify-content:center; color:#bbb; font-size:16px; }' +
-        '@media print { @page { margin:8mm; size:A4 portrait; } .page { height:calc(100vh - 16mm); } }' +
+        '@media print { @page { margin:8mm; size:A4 landscape; } .page { height:calc(100vh - 16mm); } }' +
       '</style></head><body>' +
       paginas +
       '<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>' +
