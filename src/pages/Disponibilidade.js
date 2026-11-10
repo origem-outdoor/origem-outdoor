@@ -169,7 +169,7 @@ export default function Disponibilidade({ setPage }) {
     const pIniAtual = buscado ? periodoAtual.inicio : ''
     const pFimAtual = buscado ? periodoAtual.fim : ''
     const titulo = pIniAtual
-      ? `Placas disponíveis — ${new Date(pIniAtual + 'T00:00:00').toLocaleDateString('pt-BR')}${pFimAtual ? ' a ' + new Date(pFimAtual + 'T00:00:00').toLocaleDateString('pt-BR') : ''}`
+      ? `Placas disponíveis a partir de ${new Date(pIniAtual + 'T00:00:00').toLocaleDateString('pt-BR')}`
       : 'Placas disponíveis'
     const placasEscolhidas = placasComStatus.filter(p => selecionadas.has(p.id))
     const linhas = placasEscolhidas.map(p => `
@@ -183,16 +183,16 @@ export default function Disponibilidade({ setPage }) {
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${titulo}</title>
 <style>
-  body { font-family: Arial,sans-serif; margin:0; padding:20px; color:#1a1a18; }
-  h1 { font-size:17px; font-weight:700; text-align:center; margin-bottom:20px; color:#1a3a1a; }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  .card { border:1px solid #ddd; border-radius:10px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; }
-  .card img { width:100%; height:160px; object-fit:cover; display:block; }
-  .card-info { padding:10px 12px; }
-  .card-nome { font-weight:700; font-size:14px; }
-  .card-end { font-size:12px; color:#555; margin-top:4px; }
-  .sem-foto { width:100%; height:160px; background:#f4f4f4; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:13px; }
-  @media print { @page { margin:12mm; size:A4; } body { padding:0; } }
+  body { font-family: Arial,sans-serif; margin:0; padding:24px 28px; color:#1a1a18; }
+  h1 { font-size:19px; font-weight:700; text-align:center; margin-bottom:24px; color:#1a3a1a; letter-spacing:-0.3px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  .card { border:1.5px solid #ddd; border-radius:12px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
+  .card img { width:100%; height:220px; object-fit:cover; display:block; }
+  .card-info { padding:14px 16px; }
+  .card-nome { font-weight:700; font-size:16px; margin-bottom:6px; }
+  .card-end { font-size:13px; color:#555; margin-top:4px; line-height:1.4; }
+  .sem-foto { width:100%; height:220px; background:#f4f4f4; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:13px; }
+  @media print { @page { margin:10mm; size:A4 landscape; } body { padding:0; } }
 </style></head><body>
 <h1>🪧 ${titulo}</h1>
 <div class="grid">${linhas}</div>
