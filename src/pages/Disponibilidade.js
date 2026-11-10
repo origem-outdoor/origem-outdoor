@@ -167,51 +167,55 @@ export default function Disponibilidade({ setPage }) {
 
   function gerarPDFSelecao() {
     const pIniAtual = buscado ? periodoAtual.inicio : ''
-    const pFimAtual = buscado ? periodoAtual.fim : ''
     const titulo = pIniAtual
-      ? `Placas disponíveis a partir de ${new Date(pIniAtual + 'T00:00:00').toLocaleDateString('pt-BR')}`
+      ? 'Placas disponíveis a partir de ' + new Date(pIniAtual + 'T00:00:00').toLocaleDateString('pt-BR')
       : 'Placas disponíveis'
     const placasEscolhidas = placasComStatus.filter(p => selecionadas.has(p.id))
-    const linhas = placasEscolhidas.map(p => `
-      <div class="card">
-        ${p.foto_url ? `<img src="${p.foto_url}" alt="${(p.nome || '').replace(/"/g, '')}" />` : '<div class="sem-foto">Sem foto</div>'}
-        <div class="card-info">
-          <div class="card-nome">${p.nome || ''}</div>
-          ${p.endereco ? `<div class="card-end">📍 ${p.endereco}</div>` : ''}
-        </div>
-      </div>`).join('')
-    const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${titulo}</title>
-<style>
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family: Arial,sans-serif; color:#1a1a18; background:#fff; }
-  .page { width:100%; height:100vh; display:flex; flex-direction:column; padding:24px 28px; page-break-after:always; break-after:page; }
-  .page:last-child { page-break-after:auto; break-after:auto; }
-  .titulo-pg { font-size:13px; color:#aaa; font-weight:400; text-align:center; margin-bottom:14px; }
-  .card { flex:1; border:2px solid #e0e0e0; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; min-height:0; box-shadow:0 3px 16px rgba(0,0,0,0.09); }
-  .card img { width:100%; flex:1; object-fit:cover; display:block; min-height:0; }
-  .card-info { padding:20px 24px; background:#fff; flex-shrink:0; }
-  .card-nome { font-weight:800; font-size:24px; margin-bottom:8px; color:#111; }
-  .card-end { font-size:16px; color:#555; line-height:1.5; }
-  .sem-foto { flex:1; background:#f4f4f4; display:flex; align-items:center; justify-content:center; color:#bbb; font-size:16px; }
-  @media print { @page { margin:8mm; size:A4 portrait; } .page { height:calc(100vh - 16mm); } }
-</style></head><body>
-\${placasEscolhidas.map(p => \`<div class="page">
-  <div class="titulo-pg">🪧 \${titulo}</div>
-  <div class="card">
-    \${p.foto_url ? \`<img src="\${p.foto_url}" alt="\${(p.nome||'').replace(/"/g,'')}" />\` : '<div class="sem-foto">Sem foto</div>'}
-    <div class="card-info">
-      <div class="card-nome">\${p.nome||''}</div>
-      \${p.endereco ? \`<div class="card-end">📍 \${p.endereco}</div>\` : ''}
-    </div>
-  </div>
-</div>\`).join('')}
-<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>
-</body></html>`
+
+    const paginas = placasEscolhidas.map(function(p) {
+      const foto = p.foto_url
+        ? '<img src="' + p.foto_url + '" alt="' + (p.nome || '').replace(/"/g, '') + '" />'
+        : '<div class="sem-foto">Sem foto</div>'
+      const endereco = p.endereco
+        ? '<div class="card-end">📍 ' + p.endereco + '</div>'
+        : ''
+      return (
+        '<div class="page">' +
+          '<div class="titulo-pg">🪧 ' + titulo + '</div>' +
+          '<div class="card">' +
+            foto +
+            '<div class="card-info">' +
+              '<div class="card-nome">' + (p.nome || '') + '</div>' +
+              endereco +
+            '</div>' +
+          '</div>' +
+        '</div>'
+      )
+    }).join('')
+
+    const html = '<!DOCTYPE html>' +
+      '<html><head><meta charset="utf-8"><title>' + titulo + '</title>' +
+      '<style>' +
+        '* { box-sizing:border-box; margin:0; padding:0; }' +
+        'body { font-family: Arial,sans-serif; color:#1a1a18; background:#fff; }' +
+        '.page { width:100%; height:100vh; display:flex; flex-direction:column; padding:24px 28px; page-break-after:always; break-after:page; }' +
+        '.page:last-child { page-break-after:auto; break-after:auto; }' +
+        '.titulo-pg { font-size:13px; color:#aaa; font-weight:400; text-align:center; margin-bottom:14px; }' +
+        '.card { flex:1; border:2px solid #e0e0e0; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; min-height:0; box-shadow:0 3px 16px rgba(0,0,0,0.09); }' +
+        '.card img { width:100%; flex:1; object-fit:cover; display:block; min-height:0; }' +
+        '.card-info { padding:20px 24px; background:#fff; flex-shrink:0; }' +
+        '.card-nome { font-weight:800; font-size:24px; margin-bottom:8px; color:#111; }' +
+        '.card-end { font-size:16px; color:#555; line-height:1.5; }' +
+        '.sem-foto { flex:1; background:#f4f4f4; display:flex; align-items:center; justify-content:center; color:#bbb; font-size:16px; }' +
+        '@media print { @page { margin:8mm; size:A4 portrait; } .page { height:calc(100vh - 16mm); } }' +
+      '</style></head><body>' +
+      paginas +
+      '<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>' +
+      '</body></html>'
+
     const w = window.open('', '_blank')
     if (w) { w.document.write(html); w.document.close() }
   }
-
   // Limpa seleção ao fazer nova busca
   useEffect(() => { setSelecionadas(new Set()) }, [buscado])
 
