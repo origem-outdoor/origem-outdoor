@@ -1,5 +1,6 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react'
 import { supabase } from './lib/supabase'
+import { gerarRecorrentes } from './lib/contasRecorrentes'
 import { COLORS } from './components/UI'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -288,6 +289,8 @@ export default function App() {
 
   useEffect(() => {
     async function checarAlertas() {
+      // Lança no mês as contas recorrentes antes de contar os alertas
+      await gerarRecorrentes()
       const { data } = await supabase
         .from('contas_pagar')
         .select('data_vencimento, status')
