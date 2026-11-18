@@ -155,13 +155,18 @@ export default function Contratos() {
     setSalvandoCom(true)
     const payload = { ...formCom }
     delete payload.id; delete payload.created_at; delete payload.clientes; delete payload.valor_comissao
+    // Campos calculados só para exibição na lista (não existem na tabela)
+    delete payload._tipo; delete payload.status_calc
     if (!payload.cliente_id) payload.cliente_id = null
     if (!payload.data_inicio) payload.data_inicio = null
     if (!payload.data_fim) payload.data_fim = null
     if (!payload.data_pagamento) payload.data_pagamento = null
-    if (modalCom === 'novo') await supabase.from('comissoes').insert(payload)
-    else await supabase.from('comissoes').update(payload).eq('id', formCom.id)
-    setSalvandoCom(false); setModalCom(null); carregar()
+    const { error } = modalCom === 'novo'
+      ? await supabase.from('comissoes').insert(payload)
+      : await supabase.from('comissoes').update(payload).eq('id', formCom.id)
+    setSalvandoCom(false)
+    if (error) { alert('Não foi possível salvar: ' + error.message); return }
+    setModalCom(null); carregar()
   }
 
   const excluirCom = async (id) => {
