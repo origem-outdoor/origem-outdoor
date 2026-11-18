@@ -66,6 +66,19 @@ function calcDataFim(inicio, duracao) {
   return d.toISOString().split('T')[0]
 }
 
+// Descobre a duração (14d, 28d, 3m...) a partir das datas salvas.
+// O banco guarda só as datas de cada placa, então a duração é deduzida delas.
+function inferirDuracao(inicio, fim) {
+  if (!inicio || !fim) return 'custom'
+  const dias = Math.round((new Date(fim + 'T00:00:00') - new Date(inicio + 'T00:00:00')) / 86400000)
+  if (dias === 14) return '14d'
+  if (dias === 28) return '28d'
+  for (const d of ['3m', '6m', '1a']) {
+    if (calcDataFim(inicio, d) === fim) return d
+  }
+  return 'custom'
+}
+
 // Status calculado dinamicamente pelas datas
 function calcStatus(dataInicio, dataFim, statusManual) {
   if (['encerrado', 'renovado', 'cancelado'].includes(statusManual)) return statusManual
@@ -127,7 +140,7 @@ export default function Contratos() {
   const carregar = async () => {
     const [co, pl, cl, ve, cms] = await Promise.all([
       supabase.from('contratos')
-        .select('*, clientes(nome), vendedores(nome), contrato_placas(placa_id, face, valor_por_placa, placas(nome))')
+        .select('*, clientes(nome), vendedores(nome), contrato_placas(*, placas(nome))')
         .order('created_at', { ascending: false }),
       supabase.from('placas').select('id, nome, tipo, aluguel_terreno_mensal').eq('status', 'ativa'),
       supabase.from('clientes').select('id, nome').order('nome'),
@@ -254,7 +267,7 @@ export default function Contratos() {
           cp.placa_id, {
             data_inicio: cp.data_inicio || c.data_inicio || '',
             data_fim: cp.data_fim || c.data_fim || '',
-            duracao_tipo: c.duracao_tipo || '3m'
+            duracao_tipo: inferirDuracao(cp.data_inicio || c.data_inicio, cp.data_fim || c.data_fim)
           }
         ]))
       : {}
@@ -296,7 +309,7 @@ export default function Contratos() {
     const dataFimContrato = todasDatas.map(d => d.data_fim).filter(Boolean).sort().reverse()[0] || form.data_fim
     // Só valores aceitos pelo banco: 'ativo', 'encerrado', 'renovado', 'cancelado'
     // Status dinâmicos (reservado/expirado/vencendo) são calculados em runtime, não armazenados
-    const statusCalc = ['encerrado', 'renovado', 'cancelado'].includes(form.status) ? form.status : null
+    const statusCalc = ['encerrado', 'renovado', 'cancelado'].includes(form.status) ? form.status : 'ativo'
 
     const payload = {
       cliente_id: form.cliente_id || null,
