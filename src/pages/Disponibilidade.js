@@ -124,6 +124,12 @@ function PlacaCard({ p, onCreateContrato, selecionada, onToggle }) {
           {p.proximoContrato?.clientes?.nome && <div style={{ opacity: 0.85 }}>👤 {p.proximoContrato.clientes.nome}</div>}
         </div>
       )}
+      {p.reservaLogoDepois && (
+        <div style={{ fontSize: 12, background: 'rgba(255,255,255,0.5)', borderRadius: 8, padding: '6px 10px', marginBottom: 8, color: '#5E35B1' }}>
+          <div style={{ fontWeight: 700 }}>⚠️ Libera {new Date(p.cFim + 'T00:00:00').toLocaleDateString('pt-BR')}, mas já está reservada a partir de {new Date(p.reservaLogoDepois.proximaData + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
+          <div style={{ opacity: 0.85 }}>Janela de só {p.reservaLogoDepois.dias} dia{p.reservaLogoDepois.dias !== 1 ? 's' : ''} (mín. {MIN_LOCACAO_DIAS})</div>
+        </div>
+      )}
       {!p.semJanela && p.contrato && (
         <div style={{ fontSize: 12, color: cardText, opacity: 0.85, marginBottom: 8 }}>
           {p.contrato.clientes?.nome && <div>👤 {p.contrato.clientes.nome}</div>}
@@ -346,11 +352,30 @@ export default function Disponibilidade({ setPage }) {
   const livres     = placasComStatus.filter(p => p.tipo === 'livre')
   const manutencao = placasComStatus.filter(p => p.tipo === 'manutencao')
   const ocupadas   = placasComStatus.filter(p => p.tipo === 'ocupada' || p.tipo === 'reservada')
+  // Quando a placa libera, já existe outra reserva logo em seguida? Calcula a janela livre até ela.
+  const janelaDepoisDeLiberar = (p) => {
+    if (!p.cFim) return null
+    const prox = getProximoContratoApos(p, p.cFim)
+    if (!prox) return null
+    const dias = Math.round((new Date(prox.data_inicio + 'T00:00:00') - new Date(p.cFim + 'T00:00:00')) / 86400000)
+    return { proximaData: prox.data_inicio, dias }
+  }
+  // "Ficam livres em até 5 dias" só vale se a janela depois da liberação alcança o mínimo de locação.
+  // Se a placa já está reservada logo em seguida (janela menor que MIN_LOCACAO_DIAS), ela continua como ocupada.
   const prestesIds = new Set(
-    buscado ? ocupadas.filter(p => p.cFim && p.cFim <= dataLimite5).map(p => p.id) : []
+    buscado
+      ? ocupadas.filter(p => {
+          if (!p.cFim || p.cFim > dataLimite5) return false
+          const j = janelaDepoisDeLiberar(p)
+          return !(j && j.dias < MIN_LOCACAO_DIAS)
+        }).map(p => p.id)
+      : []
   )
   const prestesALiberar = ocupadas.filter(p => prestesIds.has(p.id)).map(p => ({ ...p, preste: true }))
-  const apenasOcupadas  = ocupadas.filter(p => !prestesIds.has(p.id))
+  const apenasOcupadas  = ocupadas.filter(p => !prestesIds.has(p.id)).map(p => {
+    const j = p.cFim && p.cFim <= dataLimite5 ? janelaDepoisDeLiberar(p) : null
+    return j && j.dias < MIN_LOCACAO_DIAS ? { ...p, reservaLogoDepois: j } : p
+  })
 
   if (loading) return <div style={{ color: '#888', padding: 40 }}>Carregando...</div>
 
