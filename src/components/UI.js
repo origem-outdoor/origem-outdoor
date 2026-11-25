@@ -256,7 +256,7 @@ export function Input({ label, value, onChange, type = 'text', placeholder = '',
 }
 
 // ─── SELECT ──────────────────────────────────────────────────────────────────
-export function Select({ label, value, onChange, options = [], required = false, style = {} }) {
+export function Select({ label, value, onChange, options = [], required = false, disabled = false, style = {} }) {
   const [focused, setFocused] = useState(false)
   return (
     <div style={{ marginBottom: 16, ...style }}>
@@ -274,6 +274,7 @@ export function Select({ label, value, onChange, options = [], required = false,
         value={value}
         onChange={e => onChange(e.target.value)}
         required={required}
+        disabled={disabled}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         style={{
@@ -283,13 +284,13 @@ export function Select({ label, value, onChange, options = [], required = false,
           border: `1.5px solid ${focused ? COLORS.primary : COLORS.border}`,
           fontSize: 13,
           outline: 'none',
-          background: COLORS.surface,
+          background: disabled ? '#F3F4F6' : COLORS.surface,
           color: COLORS.text,
           boxSizing: 'border-box',
           transition: 'border-color 0.18s ease, box-shadow 0.18s ease',
           boxShadow: focused ? `0 0 0 3px ${COLORS.primarySoft}` : 'none',
           fontFamily: 'inherit',
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
         }}
       >
         <option value="">Selecione...</option>

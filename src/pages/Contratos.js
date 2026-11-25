@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { PageHeader, Badge, Btn, Input, Select, Modal, formatBRL, formatDate, diasRestantes, STATUS_PAGAMENTO, COLORS } from '../components/UI'
+import { hojeISO } from '../lib/contasRecorrentes'
+import { statusParcela, statusGeralDasParcelas } from '../lib/pagamentos'
 
 const FORM_COM = {
   tipo: 'comissao',
@@ -211,7 +213,12 @@ export default function Contratos() {
     parcelasLockRef.current = true // usuário editou manualmente — bloquear regeneração automática
     setParcelas(prev => {
       const novas = [...prev]
-      novas[idx] = { ...novas[idx], [campo]: campo === 'valor' ? parseFloat(valor) || 0 : valor }
+      const nova = { ...novas[idx], [campo]: campo === 'valor' ? parseFloat(valor) || 0 : valor }
+      if (campo === 'status') {
+        // Pago: registra a data (hoje, se ainda não tinha). Pendente: limpa a data.
+        nova.data_pagamento = valor === 'paga' ? (novas[idx].data_pagamento || hojeISO()) : null
+      }
+      novas[idx] = nova
       return novas
     })
   }
@@ -249,7 +256,7 @@ export default function Contratos() {
       if (formaParc === 'parcelado') {
         const { data: parcsExist } = await supabase.from('parcelas').select('*').eq('contrato_id', c.id).order('numero')
         if (parcsExist && parcsExist.length > 0) {
-          setParcelas(parcsExist)
+          setParcelas(parcsExist.map(px => ({ ...px, status: statusParcela(px.status) })))
         } else {
           const vt = c.valor_total || 0
           setParcelas(gerarParcelasContrato(vt, c.num_parcelas || 2, c.data_inicio))
@@ -332,7 +339,7 @@ export default function Contratos() {
       forma_pagamento: form.forma_pagamento,
       forma_parcelamento: form.forma_parcelamento,
       num_parcelas: form.forma_parcelamento === 'parcelado' ? (form.num_parcelas || 2) : null,
-      status_pagamento: form.status_pagamento,
+      status_pagamento: (form.forma_parcelamento === 'parcelado' && parcelas.length > 0) ? statusGeralDasParcelas(parcelas) : form.status_pagamento,
       data_pagamento: form.forma_parcelamento === 'avista' ? (form.data_pagamento || null) : null,
       observacoes_pagamento: form.observacoes_pagamento,
       permuta_descricao: form.forma_pagamento === 'permuta' ? (form.permuta_descricao || null) : null,
@@ -355,7 +362,6 @@ export default function Contratos() {
       if (updError) { alert('Erro ao atualizar: ' + updError.message); setSalvando(false); return }
       contrato_id = form.id
       await supabase.from('contrato_placas').delete().eq('contrato_id', contrato_id)
-      await supabase.from('parcelas').delete().eq('contrato_id', contrato_id)
     }
 
     if (contrato_id) {
@@ -369,37 +375,72 @@ export default function Contratos() {
           data_fim: datas.data_fim || dataFimContrato || null,
         }
       })
-      await supabase.from('contrato_placas').insert(placasRel)
+      const { error: placasErr } = await supabase.from('contrato_placas').insert(placasRel)
+      if (placasErr) { alert('Erro ao salvar as placas do contrato: ' + placasErr.message); setSalvando(false); carregar(); return }
 
-      // Parcelas
+      // Parcelas — atualiza as que já existem (mantém status e data de pagamento),
+      // cria as novas e só remove as que saíram da lista. Nunca apaga tudo e recria.
+      const { data: existentes } = await supabase.from('parcelas').select('id, numero').eq('contrato_id', contrato_id)
+      const idsExistentes = (existentes || []).map(e => e.id)
+      const errosParcelas = []
+      const idsMantidos = new Set()
+
       if (form.forma_parcelamento === 'parcelado') {
-        const parcelasValidas = parcelas.filter(p => p.data_vencimento)
-        if (parcelasValidas.length > 0) {
-          const parcelasPayload = parcelasValidas.map(p => ({
+        for (const p of parcelas.filter(px => px.data_vencimento)) {
+          const st = statusParcela(p.status)
+          const linha = {
             contrato_id,
             numero: p.numero,
             valor: p.valor,
             data_vencimento: p.data_vencimento,
-            status: p.status || 'pendente',
+            status: st,
             observacoes: p.observacoes || null,
-            data_pagamento: p.data_pagamento || null,
-          }))
-          const { error: parcErr } = await supabase.from('parcelas').insert(parcelasPayload)
-          if (parcErr) console.warn('Erro ao salvar parcelas:', parcErr.message)
+            data_pagamento: st === 'paga' ? (p.data_pagamento || hojeISO()) : null,
+          }
+          if (p.id && idsExistentes.includes(p.id)) {
+            idsMantidos.add(p.id)
+            const { error } = await supabase.from('parcelas').update(linha).eq('id', p.id)
+            if (error) errosParcelas.push(error.message)
+          } else {
+            const { error } = await supabase.from('parcelas').insert(linha)
+            if (error) errosParcelas.push(error.message)
+          }
         }
       } else {
-        // À vista: cria 1 parcela para aparecer no financeiro e dashboard
-        const statusParcela = form.status_pagamento === 'pago' ? 'paga' : 'pendente'
-        const { error: avErr } = await supabase.from('parcelas').insert({
+        // À vista: 1 parcela para aparecer no financeiro e no painel
+        const statusParc = form.status_pagamento === 'pago' ? 'paga' : 'pendente'
+        const linha = {
           contrato_id,
           numero: 1,
           valor: valorTotal,
           data_vencimento: form.data_pagamento || dataInicioContrato || null,
-          status: statusParcela,
-          data_pagamento: statusParcela === 'paga' ? (form.data_pagamento || null) : null,
+          status: statusParc,
+          data_pagamento: statusParc === 'paga' ? (form.data_pagamento || null) : null,
           observacoes: 'Pagamento à vista',
-        })
-        if (avErr) console.warn('Erro ao salvar parcela avista:', avErr.message)
+        }
+        const primeira = (existentes || []).slice().sort((a, b) => (a.numero || 0) - (b.numero || 0))[0]
+        if (primeira) {
+          idsMantidos.add(primeira.id)
+          const { error } = await supabase.from('parcelas').update(linha).eq('id', primeira.id)
+          if (error) errosParcelas.push(error.message)
+        } else {
+          const { error } = await supabase.from('parcelas').insert(linha)
+          if (error) errosParcelas.push(error.message)
+        }
+      }
+
+      // Remove só o que sobrou (parcelas que o usuário tirou), e só se nada falhou
+      const aRemover = idsExistentes.filter(id => !idsMantidos.has(id))
+      if (errosParcelas.length === 0 && aRemover.length > 0) {
+        const { error } = await supabase.from('parcelas').delete().in('id', aRemover)
+        if (error) errosParcelas.push(error.message)
+      }
+
+      if (errosParcelas.length > 0) {
+        setSalvando(false)
+        alert('O contrato foi salvo, mas houve erro ao salvar as parcelas: ' + errosParcelas[0] + '\nConfira as parcelas antes de fechar.')
+        carregar()
+        return
       }
     }
 
@@ -969,7 +1010,10 @@ export default function Contratos() {
               {form.forma_parcelamento === 'parcelado' && (
                 <Input label="Nº de parcelas" value={form.num_parcelas || 2} onChange={v => set('num_parcelas', Math.max(2, parseInt(v) || 2))} type="number" />
               )}
-              <Select label="Status pagamento geral" value={form.status_pagamento} onChange={v => set('status_pagamento', v)} options={[
+              <Select label={form.forma_parcelamento === 'parcelado' && parcelas.length > 0 ? 'Status pagamento geral (automático pelas parcelas)' : 'Status pagamento geral'}
+                value={form.forma_parcelamento === 'parcelado' && parcelas.length > 0 ? statusGeralDasParcelas(parcelas) : form.status_pagamento}
+                disabled={form.forma_parcelamento === 'parcelado' && parcelas.length > 0}
+                onChange={v => set('status_pagamento', v)} options={[
                 { value: 'aguardando', label: 'Aguardando' },
                 { value: 'pago', label: 'Pago' },
                 { value: 'parcial', label: 'Pago parcialmente' },
@@ -993,12 +1037,14 @@ export default function Contratos() {
                   PARCELAS — {parcelas.length}x · total {formatBRL(parcelas.reduce((s, p) => s + (Number(p.valor) || 0), 0))}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {parcelas.map((p, idx) => (
-                    <div key={idx} style={{
+                  {parcelas.map((p, idx) => {
+                    const paga = statusParcela(p.status) === 'paga'
+                    return (
+                    <div key={p.id || idx} style={{
                       display: 'grid', gridTemplateColumns: '28px 1fr 1fr 110px', gap: 8, alignItems: 'center',
-                      background: p.status === 'pago' ? '#F0FFF4' : p.status === 'atrasado' ? '#FFF5F5' : '#fff',
+                      background: paga ? '#F0FFF4' : '#fff',
                       borderRadius: 8, padding: '8px 10px',
-                      border: `1px solid ${p.status === 'pago' ? '#A5D6A7' : p.status === 'atrasado' ? '#EF9A9A' : '#E0E0E0'}`
+                      border: `1px solid ${paga ? '#A5D6A7' : '#E0E0E0'}`
                     }}>
                       <div style={{ fontSize: 11, color: '#999', fontWeight: 700, textAlign: 'center' }}>#{p.numero}</div>
                       <div>
@@ -1013,15 +1059,22 @@ export default function Contratos() {
                       </div>
                       <div>
                         <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Status</div>
-                        <select value={p.status || 'pendente'} onChange={e => atualizarParcela(idx, 'status', e.target.value)}
+                        <select value={statusParcela(p.status)} onChange={e => atualizarParcela(idx, 'status', e.target.value)}
                           style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12, background: '#fff', boxSizing: 'border-box' }}>
                           <option value="pendente">Pendente</option>
-                          <option value="pago">Pago</option>
-                          <option value="atrasado">Atrasado</option>
+                          <option value="paga">Paga</option>
                         </select>
                       </div>
+                      {paga && (
+                        <div style={{ gridColumn: '2 / 5', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 10, color: '#2E7D32', fontWeight: 600 }}>Pago em</span>
+                          <input type="date" value={p.data_pagamento || ''} onChange={e => atualizarParcela(idx, 'data_pagamento', e.target.value)}
+                            style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #A5D6A7', fontSize: 12, boxSizing: 'border-box' }} />
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}

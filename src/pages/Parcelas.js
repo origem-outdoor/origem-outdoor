@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatBRL, formatDate } from '../components/UI'
+import { hojeISO } from '../lib/contasRecorrentes'
+import { statusParcela, sincronizarPagamentoContrato } from '../lib/pagamentos'
 
 const C = {
   primary:     '#1565C0',
@@ -55,15 +57,19 @@ export default function Parcelas() {
       // Calcular se está atrasada
       const enriquecidas = data.map(p => {
         const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00') : null
-        const statusReal = p.status === 'paga' || p.status === 'cancelada'
-          ? p.status
+        const st = statusParcela(p.status)
+        const statusReal = st === 'paga' || st === 'cancelada'
+          ? st
           : venc && venc < hoje ? 'atrasada' : 'pendente'
         const cliente = p.contratos?.clientes?.nome || '-'
         const placasArr = (p.contratos?.contrato_placas || []).map(cp => cp.placas?.nome).filter(Boolean)
         const placa = placasArr.join(', ') || '-'
         return { ...p, statusReal, cliente, placa }
       })
-      setParcelas(enriquecidas)
+      // Quantas parcelas cada contrato tem (para mostrar "2/6")
+      const totais = {}
+      enriquecidas.forEach(p => { totais[p.contrato_id] = (totais[p.contrato_id] || 0) + 1 })
+      setParcelas(enriquecidas.map(p => ({ ...p, totalContrato: totais[p.contrato_id] || 1 })))
       setLoading(false)
     }
     carregar()
@@ -85,9 +91,24 @@ export default function Parcelas() {
   const countPendente = parcelas.filter(p => p.statusReal === 'pendente').length
   const countAtrasada = parcelas.filter(p => p.statusReal === 'atrasada').length
 
-  const marcarPaga = async (id) => {
-    await supabase.from('parcelas').update({ status: 'paga', data_pagamento: new Date().toISOString().split('T')[0] }).eq('id', id)
-    setParcelas(prev => prev.map(p => p.id === id ? { ...p, status: 'paga', statusReal: 'paga' } : p))
+  // Marca/desmarca a parcela e atualiza o status geral do contrato,
+  // para Contratos, Painel e Parcelas mostrarem a mesma situação.
+  const alterarPagamento = async (parcela, pagar) => {
+    const hojeStr = hojeISO()
+    const campos = pagar
+      ? { status: 'paga', data_pagamento: hojeStr }
+      : { status: 'pendente', data_pagamento: null }
+    const { error } = await supabase.from('parcelas').update(campos).eq('id', parcela.id)
+    if (error) { alert('Não foi possível atualizar a parcela: ' + error.message); return }
+    await sincronizarPagamentoContrato(parcela.contrato_id)
+    const venc = parcela.data_vencimento ? new Date(parcela.data_vencimento + 'T00:00:00') : null
+    const statusReal = pagar ? 'paga' : (venc && venc < hoje ? 'atrasada' : 'pendente')
+    setParcelas(prev => prev.map(p => p.id === parcela.id ? { ...p, ...campos, statusReal } : p))
+  }
+  const marcarPaga = (parcela) => alterarPagamento(parcela, true)
+  const desfazerPagamento = (parcela) => {
+    if (!window.confirm('Voltar esta parcela para pendente?')) return
+    alterarPagamento(parcela, false)
   }
 
   const filtros = [
@@ -196,7 +217,7 @@ export default function Parcelas() {
                     <td style={{ padding: '13px 14px', fontWeight: 700, color: C.text }}>{p.cliente}</td>
                     <td style={{ padding: '13px 14px', color: C.textMed, fontSize: 13 }}>{p.placa}</td>
                     <td style={{ padding: '13px 14px', color: C.textMed, fontSize: 13 }}>
-                      {p.numero_parcela != null ? `${p.numero_parcela}/${p.total_parcelas || '?'}` : 'Avista'}
+                      {p.totalContrato > 1 && p.numero != null ? `${p.numero}/${p.totalContrato}` : 'À vista'}
                     </td>
                     <td style={{ padding: '13px 14px', color: p.statusReal === 'atrasada' ? C.danger : C.text, fontWeight: p.statusReal === 'atrasada' ? 700 : 400 }}>
                       {formatDate(p.data_vencimento)}
@@ -207,7 +228,7 @@ export default function Parcelas() {
                     <td style={{ padding: '13px 14px' }}>
                       {p.statusReal !== 'paga' && p.statusReal !== 'cancelada' && (
                         <button
-                          onClick={() => marcarPaga(p.id)}
+                          onClick={() => marcarPaga(p)}
                           style={{
                             padding: '6px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
                             background: C.successSoft, color: C.success, fontSize: 12, fontWeight: 700,
@@ -217,7 +238,15 @@ export default function Parcelas() {
                           ✓ Marcar paga
                         </button>
                       )}
-                      {p.statusReal === 'paga' && <span style={{ fontSize: 12, color: C.success }}>✓ {formatDate(p.data_pagamento)}</span>}
+                      {p.statusReal === 'paga' && (
+                        <span style={{ fontSize: 12, color: C.success }}>
+                          ✓ {formatDate(p.data_pagamento || p.data_vencimento)}
+                          <button
+                            onClick={() => desfazerPagamento(p)}
+                            style={{ marginLeft: 8, padding: '3px 8px', borderRadius: 6, border: `1px solid ${C.border}`, background: '#fff', color: C.textMed, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}
+                          >Desfazer</button>
+                        </span>
+                      )}
                     </td>
                   </tr>
                 )
