@@ -414,7 +414,8 @@ export default function Dashboard({ setPage = () => {} }) {
     .reduce((s, c) => s + (Number(c.valor_recebido_troca)||0), 0)
 
   // Receita líquida inclui comissões recebidas e valor recebido de trocas; custos incluem trocas
-  const receitaLiquidaTotal = receitaMes + comissaoDoMes + faturamentoTrocaDoMes - custosDoMes - custoTrocaDoMes
+  // Permuta: o valor não entra no caixa, mas os custos (colagem, impressão...) são dinheiro que saiu, então abatem a receita líquida
+  const receitaLiquidaTotal = receitaMes + comissaoDoMes + faturamentoTrocaDoMes - custosDoMes - custosPermutaMes - custoTrocaDoMes
 
   // Parcelas atrasadas
   const parcelasAtrasadas = dados.parcelas.filter(p => {
@@ -752,6 +753,7 @@ export default function Dashboard({ setPage = () => {} }) {
           {comissaoDoMes > 0 && <RowItem label="+ Comissões" value={fmt(comissaoDoMes)} color="#0A5C42" />}
           {faturamentoTrocaDoMes > 0 && <RowItem label="+ Trocas recebidas" value={fmt(faturamentoTrocaDoMes)} color="#7C3AED" />}
           <RowItem label="− Custos (colagem, impressão, terreno)" value={fmt(custosDoMes)} color="#C2410C" />
+          {custosPermutaMes > 0 && <RowItem label="− Custos de contratos em permuta" value={fmt(custosPermutaMes)} color="#C2410C" sub="o valor da permuta não entra no caixa, o custo sim" />}
           {custoTrocaDoMes > 0 && <RowItem label="− Custo trocas de placa" value={fmt(custoTrocaDoMes)} color="#C2410C" />}
           <RowItem label="= Receita Líquida" value={fmt(receitaLiquidaTotal)} color={receitaLiquidaTotal >= 0 ? '#166534' : '#C2410C'} />
         </ModalWrap>
@@ -812,7 +814,7 @@ export default function Dashboard({ setPage = () => {} }) {
           sub={<>
             <span style={{ color: C.textLight }}>receita + comissões − custos − trocas</span>
             {custoTrocaDoMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>− {fmt(custoTrocaDoMes)} trocas de placa</span>}
-            {receitaPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>Permuta: {fmt(receitaPermutaMes - custosPermutaMes)} líq.</span>}
+            {custosPermutaMes > 0 && <span style={{ display: 'block', color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>− {fmt(custosPermutaMes)} custos de permuta</span>}
           </>}
           highlight={receitaLiquidaTotal > 0} />
       </section>
